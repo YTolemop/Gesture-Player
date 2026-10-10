@@ -2,14 +2,16 @@
 
 你會用自己的右手，教電腦認識十種姿勢，再用它們控制遊戲。
 
-**第一次使用，照順序做就好：下載 → 安裝 → 錄手勢 → 寫算法 → 訓練與測試 → 配對。**
+本文預設你已依課前通知安裝好 **VS Code與Python 3.13.2**。
+
+**從這裡開始：下載 → 建立專案環境 → 錄手勢 → 寫算法 → 訓練與測試 → 配對。**
 
 先記住兩件事：只用右手，左手要離開畫面；錄製保存的是手部關鍵點，不是影片。算法還沒寫好也能先錄資料。
 
 ## 你現在要做哪一步？
 
 - [1. 下載專案，用VS Code開啟](#step-1)
-- [2. 安裝Python與套件](#step-2)
+- [2. 建立.venv與安裝套件](#step-2)
 - [3. 開啟工具，確認鏡頭](#step-3)
 - [4. 錄下十種手勢](#step-4)
 - [5. 完成正規化、KNN與選做濾波](#step-5)
@@ -22,20 +24,10 @@
 
 1. 開啟 [GitHub專案](https://github.com/YTolemop/Gesture-Player)，按 **Code → Download ZIP**。
 2. 完整解壓縮到自己的資料夾，不要在壓縮檔裡直接執行。
-3. 安裝並開啟 [VS Code](https://code.visualstudio.com/)。選「檔案 → 開啟資料夾」，開啟解壓後的 **Gesture-Player-main** 資料夾（直接包含main.py）。
-4. 在VS Code的擴充套件頁搜尋 **Python**，安裝發布者為 **Microsoft** 的版本。
-5. 選「終端機 → 新增終端機」。接下來的命令都在這裡輸入。
+3. 開啟VS Code。選「檔案 → 開啟資料夾」，開啟解壓後的 **Gesture-Player-main** 資料夾（直接包含main.py）。
+4. 選「終端機 → 新增終端機」。接下來的命令都在這裡輸入。
 
 **完成時：** 左側看得到 `main.py`、`student`、`README.md`，下方有終端機。Windows用PowerShell，Mac／Linux用zsh或bash。如果看不到GitHub專案，請老師確認你的帳號有存取權限。
-
-### 想把VS Code改成繁體中文？
-
-1. 點左側「擴充套件」圖示（四個方塊），搜尋 **Chinese Traditional**。
-2. 找到 **Chinese (Traditional) Language Pack for Visual Studio Code**，確認發布者是 **Microsoft**，按 **Install**。
-3. 安裝後若出現 **Change Language and Restart**，按它重新啟動VS Code。
-4. 若沒有提示，按 **Ctrl+Shift+P**（Mac用 **Cmd+Shift+P**），輸入 **Configure Display Language**，選 **繁體中文（zh-tw）**，再重新啟動。
-
-重新開啟後，選單就會顯示繁體中文。這只改介面語言，程式碼和Python指令仍照本文輸入。
 
 <details>
 <summary>已經會使用Git？也可以這樣下載</summary>
@@ -50,19 +42,17 @@ cd Gesture-Player
 </details>
 
 <a id="step-2"></a>
-## 2. 安裝Python與套件
+## 2. 建立.venv與安裝套件
 
-VS Code是寫程式的工具；Python負責執行程式，所以兩者都需要安裝。
+Python已安裝好，這一步替專案建立獨立環境並安裝需要的套件。請在包含main.py的資料夾執行下方命令。
 
-### 先選你的電腦
-
-| 你的系統 | 要準備什麼 |
+| 你的系統 | 使用哪組指令 |
 |---|---|
-| Windows x64 | [Python 3.13.2](https://www.python.org/downloads/release/python-3132/) 的Windows 64-bit installer；安裝時勾 **Add python.exe to PATH** |
-| Mac（M系列晶片） | 同一官方頁面的macOS installer；使用原生Apple Silicon環境 |
-| Linux x86_64 | 請老師先協助安裝Python 3.13.2、venv與Tk；下方有Linux補充 |
+| Windows x64 | Windows PowerShell |
+| Mac（M系列晶片） | Mac／Linux，使用原生Apple Silicon環境 |
+| Linux x86_64 | Mac／Linux，需有桌面環境、glibc 2.28以上與Tk支援 |
 
-目前Windows已實機驗證；Mac與Linux仍需課前實機確認。Intel Mac與Linux ARM目前缺少鎖定版本的[MediaPipe安裝包](https://pypi.org/project/mediapipe/0.10.32/#files)，使用這些設備請先找老師，不要做到安裝一半才換版本。
+目前Windows已實機驗證；Mac與Linux仍需課前實機確認。Intel Mac與Linux ARM目前缺少鎖定版本的[MediaPipe安裝包](https://pypi.org/project/mediapipe/0.10.32/#files)，使用這些設備請先找老師。
 
 ### 在終端機建立環境
 
@@ -103,26 +93,7 @@ python3.13 -m venv .venv
 
 本文件直接指定.venv的Python，不需要另外Activate，也不需要修改PowerShell執行政策。每台電腦自行建立.venv，不複製別人的環境。
 
-<details>
-<summary>Linux安裝補充（可請老師協助）</summary>
 
-使用有桌面的本機環境，Linux x86_64需glibc至少2.28。若使用pyenv，先依[官方建置需求](https://github.com/pyenv/pyenv/wiki#suggested-build-environment)安裝編譯與Tk開發套件，再建立Python。已安裝pyenv時：
-
-```bash
-pyenv install 3.13.2
-pyenv local 3.13.2
-```
-
-Ubuntu／Debian常見的GUI、影像與音訊元件如下；不是完整的Python編譯依賴清單，其他發行版名稱不同：
-
-```bash
-sudo apt update
-sudo apt install tk-dev python3-tk libgl1 libglib2.0-0 libportaudio2
-```
-
-若pyenv只提供python命令，確認`python --version`是3.13.2，再用`python -m venv .venv`。Tk建置缺失時，要修正所用Python，不能只在.venv用pip補裝。
-
-</details>
 
 <a id="step-3"></a>
 ## 3. 開啟工具，確認鏡頭
@@ -466,7 +437,7 @@ config.get('distance_threshold', 1.0)
 | 你看到的情況 | 先試這件事 |
 |---|---|
 | 終端找不到main.py | 確認VS Code開的是包含main.py的Gesture-Player資料夾；Windows用Get-Location，Mac／Linux用pwd檢查路徑 |
-| 找不到Python或版本不對 | 安裝3.13.2後重開VS Code，確認第一行版本檢查再建立.venv |
+| 找不到Python或版本不對 | 先確認課前環境設定，重開VS Code；版本仍不對請找老師，再建立.venv |
 | 找不到numpy、mediapipe等套件 | 確認安裝完成，且命令／VS Code解譯器都使用本專案.venv |
 | 無法安裝MediaPipe | 先核對系統與晶片是否在步驟2支援表中，再把完整錯誤給老師 |
 | 視窗開不了，出現_tkinter錯誤 | 請老師確認所用Python有Tk支援；可執行下方Tk測試 |
