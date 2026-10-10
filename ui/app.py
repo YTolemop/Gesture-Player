@@ -1,4 +1,5 @@
 import json
+import queue
 import threading
 import time
 from pathlib import Path
@@ -27,6 +28,7 @@ class App:
         self.capture_reason='鏡頭尚未開啟';self.hand_status='尚未偵測'
         self.sent_availability=None
         self.pair_busy=False;self.batch_paths={}
+        self.tool_notifications=queue.Queue()
         main=ttk.Frame(self.root,padding=15);main.pack(fill='both',expand=True)
         ttk.Label(main,text='手勢訓練器',font=('Microsoft JhengHei',22,'bold')).pack(anchor='w',pady=(0,10))
         self.tabs=ttk.Notebook(main);self.tabs.pack(fill='both',expand=True)
@@ -60,19 +62,23 @@ class App:
         for key,title,width in [('label','類別',150),('purpose','用途',55),('count','筆數',50),('time','錄製時間',130)]:
             self.files.heading(key,text=title);self.files.column(key,width=width,stretch=False)
         self.files.pack(anchor='w');ttk.Button(data,text='刪除所選資料',command=self.delete_batch).pack(anchor='w',pady=5)
-        ttk.Button(data,text='訓練',command=lambda:self.background(self.train)).pack(anchor='w',pady=5)
-        ttk.Button(data,text='測試',command=lambda:self.background(self.evaluate)).pack(anchor='w',pady=5)
-        ttk.Button(data,text='載入KNN模型',command=lambda:self.background(self.load)).pack(anchor='w',pady=5)
+        ttk.Button(data,text='訓練',command=lambda:self.background(self.train,'訓練')).pack(anchor='w',pady=5)
+        ttk.Button(data,text='測試',command=lambda:self.background(self.evaluate,'測試')).pack(anchor='w',pady=5)
+        ttk.Button(data,text='載入KNN模型',command=lambda:self.background(self.load,'載入KNN模型')).pack(anchor='w',pady=5)
         self.server_var=tk.StringVar(value='http://127.0.0.1:3000');self.room_var=tk.StringVar();self.pair_var=tk.StringVar()
         for title,var in [('主機網址（其他筆電使用主機區網IP）',self.server_var),('房間碼（選填，單人留空）',self.room_var),('一次性配對碼',self.pair_var)]:
             ttk.Label(connect,text=title).pack(anchor='w',pady=5);ttk.Entry(connect,textvariable=var,width=60).pack(anchor='w')
         self.pair_button=ttk.Button(connect,text='配對',command=self.toggle_pair);self.pair_button.pack(anchor='w',pady=10)
         self.root.protocol('WM_DELETE_WINDOW',self.close);self.root.after(50,self.render);self.refresh_files()
 
-    def background(self,fn):
+    def background(self,fn,operation=None):
         def run():
-            try:fn()
-            except Exception as exc:self.notice=f'工具提示：{exc}（算法TODO不等於安裝失敗）'
+            try:
+                result=fn()
+                if operation:self.tool_notifications.put(('info',f'{operation}完成',result))
+            except Exception as exc:
+                self.notice=f'工具提示：{exc}（算法TODO不等於安裝失敗）'
+                if operation:self.tool_notifications.put(('error',f'{operation}失敗',str(exc)))
         threading.Thread(target=run,daemon=True).start()
 
     def start_camera(self):
@@ -204,14 +210,18 @@ class App:
                 p=self.batch_paths[selected[0]];p.unlink();p.with_suffix('.json').unlink(missing_ok=True);self.refresh_files()
 
     def train(self):
-        self.notice=json.dumps(train(list((ROOT/'data').glob('*.npz')),ROOT/'models/knn.npz',self.config),ensure_ascii=False);self.load()
+        result=train(list((ROOT/'data').glob('*.npz')),ROOT/'models/knn.npz',self.config);self.load()
+        self.notice=json.dumps(result,ensure_ascii=False)
+        return f'訓練完成，KNN模型已保存並載入。\n訓練樣本：{result["training_samples"]} 筆\n正規化排除：{result["normalization_rejected"]} 筆'
 
     def evaluate(self):
         result=evaluate(list((ROOT/'data').glob('*.npz')),ROOT/'models/knn.npz',self.config);(ROOT/'models/evaluation.json').write_text(json.dumps(result,ensure_ascii=False,indent=2),encoding='utf-8');self.notice=f'獨立測試報告保存 models/evaluation.json：{result}'
+        return f'獨立測試完成。\n測試樣本：{result["samples"]} 筆\n正規化排除：{result["normalization_rejected"]} 筆\n報告已保存至 models/evaluation.json'
 
     def load(self):
         self.model=load_model(ROOT/'models/knn.npz',self.config);self.algorithm_status['knn']=True;self.notice='KNN模型已載入；接口可用不代表真人準確率通過'
         if self.client:self.client.availability(**self.flags())
+        return 'KNN模型已載入，可切換至 recognize 模式進行辨識。'
 
     def toggle_pair(self):
         if self.pair_busy:return
@@ -256,6 +266,13 @@ class App:
                 image=Image.fromarray(cv2.cvtColor(cv2.resize(frame,(max(1,int(w*scale)),max(1,int(h*scale)))),cv2.COLOR_BGR2RGB))
                 photo=ImageTk.PhotoImage(image);widget.config(image=photo,text='');widget.image=photo
         self.root.after(50,self.render)
+        try:
+            kind,title,message=self.tool_notifications.get_nowait()
+        except queue.Empty:
+            pass
+        else:
+            if kind=='error':messagebox.showerror(title,message,parent=self.root)
+            else:messagebox.showinfo(title,message,parent=self.root)
 
     def close(self):
         self.stop_camera()
