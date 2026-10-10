@@ -1,0 +1,10 @@
+.venv/
+__pycache__/
+.pytest_cache/
+data/*
+models/*
+logs/
+config.json
+*.log
+pytest-cache-files-*/
+.test-tmp-*/
