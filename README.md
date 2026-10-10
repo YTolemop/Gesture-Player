@@ -28,6 +28,15 @@
 
 **完成時：** 左側看得到 `main.py`、`student`、`README.md`，下方有終端機。Windows用PowerShell，Mac／Linux用zsh或bash。如果看不到GitHub專案，請老師確認你的帳號有存取權限。
 
+### 想把VS Code改成繁體中文？
+
+1. 點左側「擴充套件」圖示（四個方塊），搜尋 **Chinese Traditional**。
+2. 找到 **Chinese (Traditional) Language Pack for Visual Studio Code**，確認發布者是 **Microsoft**，按 **Install**。
+3. 安裝後若出現 **Change Language and Restart**，按它重新啟動VS Code。
+4. 若沒有提示，按 **Ctrl+Shift+P**（Mac用 **Cmd+Shift+P**），輸入 **Configure Display Language**，選 **繁體中文（zh-tw）**，再重新啟動。
+
+重新開啟後，選單就會顯示繁體中文。這只改介面語言，程式碼和Python指令仍照本文輸入。
+
 <details>
 <summary>已經會使用Git？也可以這樣下載</summary>
 
