@@ -4,8 +4,10 @@ from pathlib import Path
 import numpy as np
 from core.types import RawHandSample, CAPTURE_VERSION
 
-def save_batch(path, samples, labels, purpose, config):
+def save_batch(path, samples, labels, purpose, config, channel=None):
     path = Path(path)
+    if channel is not None and channel not in ('left', 'right', 'both'):
+        raise ValueError('資料通道無效')
     if purpose not in ('train', 'test') or len(samples) != len(labels) or not samples or any(not isinstance(v,(int,np.integer)) or not 0<=v<=(10 if purpose=='test' else 9) for v in labels):
         raise ValueError('資料用途／樣本數無效')
     if path.exists():
@@ -21,7 +23,10 @@ def save_batch(path, samples, labels, purpose, config):
         m = asdict(s)
         m.pop('left'); m.pop('right'); meta.append(m)
     np.savez_compressed(path, raw=raw, present=present, labels=np.asarray(labels, dtype=np.int64))
-    path.with_suffix('.json').write_text(json.dumps({'purpose': purpose, 'capture_version': CAPTURE_VERSION, 'config': config, 'samples': meta}, ensure_ascii=False, indent=2), encoding='utf-8')
+    metadata = {'purpose': purpose, 'capture_version': CAPTURE_VERSION, 'config': config, 'samples': meta}
+    if channel is not None:
+        metadata['channel'] = channel
+    path.with_suffix('.json').write_text(json.dumps(metadata, ensure_ascii=False, indent=2), encoding='utf-8')
 
 def read_batch(path):
     path = Path(path)

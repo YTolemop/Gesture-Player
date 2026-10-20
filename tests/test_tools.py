@@ -57,7 +57,7 @@ def test_model_hash():assert len(verify_model()['sha256'])==64
 def test_protocol_all_eleven():
     from core.labels import LABELS
     assert len(LABELS)==11 and LABELS[-1]=='NONE'
-    fixtures=json.loads(open('protocol/fixtures/inputs.json',encoding='utf-8').read());assert [v['gesture'] for v in fixtures['valid']]==LABELS
+    fixtures=json.loads(open('protocol/fixtures/inputs.json',encoding='utf-8').read());assert [v['gesture'] for v in fixtures['valid'] if 'gesture' in v]==LABELS
     import hashlib
     from pathlib import Path
     manifest=json.loads(Path('protocol/manifest.json').read_text(encoding='utf-8'))

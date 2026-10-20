@@ -101,7 +101,7 @@ def test_sender_emits_preview_with_input_and_heartbeat_and_drops_stale():
     for generation, expected in [(2, True), (1, False)]:
         c = client()
         emitted = []
-        c.sio.emit = lambda event, payload, namespace: emitted.append((event, payload))
+        c.sio.emit = lambda event, payload, namespace, **kwargs: emitted.append((event, payload))
         c.pending_preview = dict(protocolVersion=1, sessionId='session', generation=generation, hands=[])
         class OneIteration:
             count = 0

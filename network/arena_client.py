@@ -3,16 +3,21 @@ import time
 import uuid
 import socketio
 from network.preview import encode_preview
+from network.commands import Commands
+from network.pairing import pairing_values, REASONS
 
 class ArenaClient:
     def __init__(self, router, on_status=lambda _: None, reset=lambda: None):
         self.router, self.on_status, self.reset = router, on_status, reset
         self.sio=socketio.Client(reconnection=True, logger=False, engineio_logger=False)
         self.pending_preview=None; self.last_preview=0.0
+        self.neutral_until=0.0;self.feedback='尚未收到競技場回覆'
         self.context={}; self.token=None; self.room=None; self.seq=0; self.lock=threading.RLock(); self.stop=threading.Event()
         self.sio.on('controller:context',self._context,namespace='/controller')
         self.sio.on('connect',self._connected,namespace='/controller')
         self.sio.on('disconnect',self._disconnected,namespace='/controller')
+        self.sio.on('controller:status',self._input_status,namespace='/controller')
+        self.sio.on('input:result',self._action_result,namespace='/controller')
         self.thread=threading.Thread(target=self._send,daemon=True);self.thread.start()
 
     @property
@@ -28,6 +33,7 @@ class ArenaClient:
         return result
 
     def connect(self,server,room,pair_code,source='recognizer',algorithms=None):
+        server,room,pair_code=pairing_values(server,room,pair_code)
         self.room=room;self.sio.connect(server,namespaces=['/controller'],socketio_path='socket.io')
         result=self.call('controller:pair',{'protocolVersion':1,'roomCode':room,'pairCode':pair_code,'source':source,'algorithms':algorithms or {}})
         with self.lock:
@@ -35,8 +41,32 @@ class ArenaClient:
                 raise RuntimeError('配對已解除，請重新產生配對碼')
             self.room=result['roomCode'];self.token=result['controllerToken']
             self.context={**self.context,**result};self.seq=0;self.pending_preview=None;self.last_preview=0.0
+            self.neutral_until=time.monotonic()+.25
         self.router.clear();self.on_status(f"已配對 {result['seat']}，等待新 NONE 解除")
         return result
+
+    def _input_status(self, value):
+        with self.lock:
+            if value.get('matchId',self.context.get('matchId')) != self.context.get('matchId') or value.get('generation',self.context.get('generation')) != self.context.get('generation'):
+                return
+            commands=value.get('commands',{})
+            output=' / '.join(f'{key}={commands.get(key,"NONE")}' for key in ('left','right','both'))
+            state=value.get('inputState','READY')
+            self.feedback=f'已收到 {output}；{REASONS.get(state,state)}'
+
+    def _action_result(self, value):
+        with self.lock:
+            if value.get('matchId')!=self.context.get('matchId') or value.get('generation')!=self.context.get('generation'):
+                return
+            self.action_feedback=f'{value.get("label","")}：{REASONS.get(value.get("reason"),value.get("reason",""))}'
+
+    def _packet_ack(self, result, identity):
+        with self.lock:
+            if identity!=tuple(self.context.get(key) for key in ('sessionId','generation','matchId','phase')):
+                return
+            if not result.get('ok'):
+                reason=result.get('errorCode','INPUT_REJECTED')
+                self.feedback=f'指令未接受：{reason}；請確認網站的控制來源與配對狀態'
 
     def _connected(self):
         with self.lock:
@@ -72,6 +102,8 @@ class ArenaClient:
                 self.seq=0
             if changed:
                 self.pending_preview=None;self.last_preview=0.0
+                self.neutral_until=time.monotonic()+.25
+                self.feedback='場次狀態更新，先傳送中立輸入';self.action_feedback=''
                 self.router.clear();self.reset()
 
     def preview(self, frame, sample):
@@ -97,17 +129,25 @@ class ArenaClient:
             self.pending_preview=payload
 
     def _send(self):
-        last_heartbeat=0
-        while not self.stop.wait(.1):
+        last_heartbeat=0;last_sent=float('-inf');last_commands=None;last_identity=None
+        while not self.stop.wait(.01):
             if not self.sio.connected or '/controller' not in self.sio.namespaces:
                 continue
             with self.lock:
                 c=dict(self.context)
                 if not c.get('sessionId'):
                     continue
-                v={'protocolVersion':1,'sessionId':c['sessionId'],'matchId':c.get('matchId'),'generation':c.get('generation',1),'seq':self.seq,'gesture':self.router.read()};self.seq+=1
+                now=time.monotonic()
+                identity=tuple(c.get(key) for key in ('sessionId','generation','matchId','phase'))
+                commands=self.router.read_commands() if hasattr(self.router,'read_commands') else Commands()
+                if now<getattr(self,'neutral_until',0):commands=Commands()
+                send=commands!=last_commands or identity!=last_identity or now-last_sent>=.1
+                v={'protocolVersion':1,'sessionId':c['sessionId'],'matchId':c.get('matchId'),'generation':c.get('generation',1),'seq':self.seq,'commands':commands.payload()}
+                if send:self.seq+=1
             try:
-                self.sio.emit('input:state',v,namespace='/controller')
+                if send:
+                    self.sio.emit('input:state',v,namespace='/controller',callback=lambda result,identity=identity:self._packet_ack(result,identity))
+                    last_sent=now;last_commands=commands;last_identity=identity
                 with self.lock:
                     preview=self.pending_preview;self.pending_preview=None
                     if preview and (preview['sessionId']!=self.context.get('sessionId') or preview['generation']!=self.context.get('generation') or self.context.get('source')!='recognizer'):
@@ -133,7 +173,7 @@ class ArenaClient:
         if self.sio.connected:
             if c.get('sessionId'):
                 try:
-                    self.sio.emit('input:state',{'protocolVersion':1,'sessionId':c['sessionId'],'matchId':c.get('matchId'),'generation':c.get('generation',1),'seq':self.seq,'gesture':'NONE'},namespace='/controller')
+                    self.sio.emit('input:state',{'protocolVersion':1,'sessionId':c['sessionId'],'matchId':c.get('matchId'),'generation':c.get('generation',1),'seq':self.seq,'commands':Commands().payload()},namespace='/controller')
                 except Exception:
                     pass
             self.sio.disconnect()

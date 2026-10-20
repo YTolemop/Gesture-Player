@@ -14,7 +14,7 @@
   ],
   "fileHashes": {
     "gesture_labels.json": "5dd584fa2e6cbbcbc09361055e90d182945a198e0ff7f45469ce84530799adf0",
-    "schemas/input-state.schema.json": "9624d62b705e2cb2f4ed3a64be0db2979cf7e2602bdfef598c188d4ee6a887b8",
+    "schemas/input-state.schema.json": "b2d1daaf82dd5840742b23c49a70f7e3257cee20fd939ff82d8c043695c06faf",
     "schemas/requests.schema.json": "c72537a25814842c476e19474f2dc45198ef41d4971a7fe8184876f93126920a",
     "schemas/ack.schema.json": "f9dc257647c80ae72d9589bbcb3c317ed01b7144f39472ebd18188b83c3d1a73",
     "schemas/context.schema.json": "3fd13247dcbfc5898fed51b9a7748863c7f38e959582c6c8df8d30f608d932f1",

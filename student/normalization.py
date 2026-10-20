@@ -12,6 +12,9 @@ class StudentNormalizer:
         mixed single/dual hands. Return invalid with features=None to reject
         samples your algorithm does not support. Preserve orientation as needed.
         Return FeatureResult with featureVersion=config['feature_version'].
-        See README for the basic right-hand and optional mixed-hand examples.
+        The current GUI trains separate left/right/both banks. Support each
+        handedness combination with the same fixed dimension (README: 131).
+        Left/right calls contain only that side; the joint bank requires both.
+        See README for the complete three-channel reference implementation.
         """
         raise NotImplementedError('Implement StudentNormalizer.transform; see README')

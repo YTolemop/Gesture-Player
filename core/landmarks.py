@@ -24,16 +24,21 @@ class Landmarks:
         self.last_ms = max(self.last_ms + 1, int(timestamp * 1000))
         result = self.detector.detect_for_video(mp.Image(image_format=mp.ImageFormat.SRGB, data=cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)), self.last_ms)
         slots = {'Left': None, 'Right': None}
-        reliable = True
+        ambiguous = set()
         for points, handedness in zip(result.hand_landmarks, result.handedness):
+            if not handedness:
+                continue
             cat = handedness[0]
             name=cat.category_name
             if self.swap_handedness and name in slots:name='Right' if name=='Left' else 'Left'
-            if name not in slots or cat.score < .7 or slots[name] is not None:
-                reliable = False
-                break
+            if name not in slots or cat.score < .7 or name in ambiguous:
+                continue
+            if slots[name] is not None:
+                slots[name] = None
+                ambiguous.add(name)
+                continue
             slots[name] = np.array([[p.x, p.y, p.z] for p in points], dtype=np.float32)
-        return RawHandSample(slots['Left'] if reliable else None, slots['Right'] if reliable else None, frame.shape[1], frame.shape[0], timestamp, camera=camera)
+        return RawHandSample(slots['Left'], slots['Right'], frame.shape[1], frame.shape[0], timestamp, camera=camera)
 
     def close(self):
         self.detector.close()

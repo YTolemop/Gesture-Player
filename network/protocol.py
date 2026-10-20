@@ -5,5 +5,5 @@ class InputState(TypedDict):
     sessionId: str
     matchId: Optional[str]
     seq: int
-    gesture: str
+    commands: dict[str, str]
     generation: int

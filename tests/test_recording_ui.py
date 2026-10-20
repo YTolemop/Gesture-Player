@@ -12,7 +12,7 @@ def recording(monkeypatch,tmp_path):
     hand=np.zeros((21,3),dtype=np.float32);hand[9]=[.1,.1,0]
     app.samples=[RawHandSample(None,hand,640,480,0)];app.labels=[0]
     app.record_lock=threading.Lock();app.recording=True;app.record_pending=True
-    app.record_batch='test-recording';app.record_label=0;app.record_purpose='train';app.config={}
+    app.record_batch='test-recording';app.record_label=0;app.record_purpose='train';app.record_channel='right';app.config={}
     app.stop_record_button=SimpleNamespace(config=lambda **_:None)
     app.refresh_files=lambda:None
     app.hand_status='右手';app.capture_reason=''
@@ -39,10 +39,10 @@ def test_failed_save_preserves_batch_for_retry(monkeypatch,tmp_path):
     app=recording(monkeypatch,tmp_path)
     from core.dataset import save_batch
     attempts=[]
-    def save(*args):
+    def save(*args,**kwargs):
         attempts.append(args)
         if len(attempts)==1:raise OSError('cannot write')
-        save_batch(*args)
+        save_batch(*args,**kwargs)
     monkeypatch.setattr('ui.app.save_batch',save)
     monkeypatch.setattr('ui.app.messagebox.showerror',lambda *_:None)
     app.save_record()

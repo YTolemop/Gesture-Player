@@ -24,8 +24,7 @@ def recipes():
             namespace = {}
             exec(block, namespace)
             found.append(namespace)
-    basic = next(n['StudentNormalizer']() for n in found
-                 if 'StudentNormalizer' in n and 131 not in n['StudentNormalizer'].transform.__code__.co_consts)
+    basic = None  # Current teaching starts with the full three-channel recipe.
     mixed = next(n['StudentNormalizer']() for n in found
                  if 'StudentNormalizer' in n and 131 in n['StudentNormalizer'].transform.__code__.co_consts)
     knn = next(n['StudentKNN'] for n in found if 'StudentKNN' in n)
@@ -46,16 +45,11 @@ def samples():
             RawHandSample(left, right, 640, 480, 0)]
 
 
-def test_readme_basic_stays_right_only():
-    basic, _, _ = recipes()
-    for s, valid in zip(samples(), [False, True, False]):
-        result = feature(s, CONFIG, basic)
-        assert result.valid == valid
-        if valid:
-            points = s.right.astype(np.float64) * [640, 480, 640]
-            centered = points - points[0]
-            np.testing.assert_allclose(result.features,
-                                       (centered / np.linalg.norm(centered[9])).reshape(63))
+def test_readme_recipe_supports_all_three_channel_hand_combinations():
+    _, normalizer, _ = recipes()
+    for raw in samples():
+        result = feature(raw, CONFIG, normalizer)
+        assert result.valid and result.features.shape == (131,)
 
 
 def test_readme_mixed_fixed_slots_relative_position_and_no_mutation():
@@ -128,7 +122,7 @@ def test_published_recipes_pass_student_contracts(monkeypatch):
     basic, mixed, knn = recipes()
     monkeypatch.setattr(contracts, 'StudentKNN', knn)
     contracts.test_knn_contract()
-    for normalizer in [basic, mixed]:
+    for normalizer in [mixed]:
         monkeypatch.setattr('core.features.StudentNormalizer', lambda: normalizer)
         contracts.test_normalization_contract()
 

@@ -1,254 +1,85 @@
-# 手勢訓練器：學員操作與程式實作指南
+# 手勢訓練器 · 新版三通道 GUI 學員版
 
-本文預設學員已依課前通知安裝好 **VS Code 與 Python 3.13.2**。
+這份是保留圖形介面的新版學員包，GitHub 專案為 [Gesture-Player](https://github.com/YTolemop/Gesture-Player)。與目前競技場、Demo、initial 使用相同的 `left`、`right`、`both` 輸出能力：左右手可同時操作，雙手合成成功時獨占輸出。技能冷卻、氣量、硬直和觸發規則完全由同一個競技場判定，使用 UI 不會少一個控制通道。
 
->若還未完成，請先安裝完畢後再進行以下步驟，如安裝遇到問題，請妥善利用網路資源，或尋求助教協助。
+差別在操作方式：用按鈕選通道、錄製、訓練、測試及配對，不必手動執行每個流程。`student/` 仍是待完成的作業起點；本教學提供可整段複製的完整參考程式，沒有附帶別人的訓練資料或自訂手勢模型。請理解每一步，再使用自己的手勢收集資料。
 
-## 目錄
+## 1. 安裝與開啟
 
-- [1. 下載專案](#step-1)
-- [2. 建立.venv與安裝套件](#step-2)
-- [3. 開啟工具，確認鏡頭](#step-3)
-- [4. 錄下十種手勢](#step-4)
-- [5. 完成正規化、KNN與選做濾波](#step-5)
-- [6. 訓練並試試辨識效果](#step-6)
-- [7. 連上競技場](#step-7)
-- [選做：優化KNN參數](#Optimize-KNN)
-- [選做：左手、雙手與混合手勢](#mixed-hands)
-- [其它](#others)
+需要 Python 3.13、攝影機及可開視窗的桌面環境。在 [GitHub](https://github.com/YTolemop/Gesture-Player) 按 Code → Download ZIP，完整解壓縮，然後用 VS Code 開啟含 `main.py` 的資料夾，再開啟終端機。
 
-<a id="step-1"></a>
-## 1. 下載專案
-
-1. 開啟 [GitHub專案](https://github.com/YTolemop/Gesture-Player)，按 **Code → Download ZIP**。
-![螢幕擷取畫面 2026-10-10 164705](https://hackmd.io/_uploads/SkYAsuwsfx.png)
-3. 完整解壓縮到自己的資料夾，不要在壓縮檔裡直接執行。
-4. 開啟VS Code。選「檔案 → 開啟資料夾」，開啟解壓後的 **Gesture-Player-main**。
-![螢幕擷取畫面 2026-10-10 180343](https://hackmd.io/_uploads/rkepatwjfl.png)
-6. 選「終端機 → 新增終端機」。接下來的命令都在這裡輸入。
-![螢幕擷取畫面 2026-10-10 164645](https://hackmd.io/_uploads/ryKk3Ovifg.png)
-
-
-完成時：
-![image](https://hackmd.io/_uploads/B1NIAKDjGg.png)
-
-> Windows用PowerShell，Mac／Linux用zsh或bash。
-
-<details>
-<summary>已經會使用Git？也可以這樣下載</summary>
-
-```bash
-git clone https://github.com/YTolemop/Gesture-Player.git
-cd Gesture-Player
-```
-
-</details>
-
-<a id="step-2"></a>
-## 2. 建立.venv與安裝套件
-
-Python已安裝好，這一步替專案建立獨立環境並安裝需要的套件。
-
-| 你的系統 | 使用哪組指令 |
-|---|---|
-| Windows x64 | Windows PowerShell |
-| Mac（M系列晶片） | Mac／Linux，使用原生Apple Silicon環境 |
-| Linux x86_64 | Mac／Linux，需有桌面環境、glibc 2.28以上與Tk支援 |
-
-### 在終端機建立環境
-
-Windows：
+Windows PowerShell 首次執行：
 
 ```powershell
-python --version
-python -m venv .venv
-& '.\.venv\Scripts\python.exe' -m pip install -r requirements-lock.txt
-& '.\.venv\Scripts\python.exe' main.py prepare
-& '.\.venv\Scripts\python.exe' main.py check
+py -3.13 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements-lock.txt
+.\.venv\Scripts\python.exe main.py prepare
+.\.venv\Scripts\python.exe main.py check
+.\.venv\Scripts\python.exe main.py gui
 ```
 
-Mac先執行：
+macOS／Linux 首次執行：
+
 ```bash
-python3.13 --version
 python3.13 -m venv .venv
 ./.venv/bin/python -m pip install -r requirements-lock.txt
 ./.venv/bin/python main.py prepare
 ./.venv/bin/python main.py check
-```
-
-Linux先執行：
-```bash
-python3.13 --version
-sudo apt update
-sudo apt install python3.13-tk python3.13-venv
-python3.13 -m venv .venv
-./.venv/bin/python -m pip install -r requirements-lock.txt
-./.venv/bin/python main.py prepare
-./.venv/bin/python main.py check
-```
-
-第一行應顯示 **Python 3.13.2**。`.venv` 就是本專案自己的Python環境；`requirements-lock.txt` 列出要安裝的套件與版本。只在第一次使用或重建環境時做這一段，不需要每次開工具都重做。
-
-完成時：
-![image](https://hackmd.io/_uploads/SJxS19vifx.png)
-
-### 讓VS Code選對Python
-
-按 **Ctrl+Shift+P**（Mac為 **Cmd+Shift+P**）搜尋 **Python: Select Interpreter**，選本專案的.venv。
-![螢幕擷取畫面 2026-10-10 181208](https://hackmd.io/_uploads/Bk4WxcvjMx.png)
-![螢幕擷取畫面 2026-10-10 181235](https://hackmd.io/_uploads/BJw-e5Pofg.png)
-
-<a id="step-3"></a>
-## 3. 開啟工具，確認鏡頭
-
-以下保留右手單手的入門路線。工具本身也接受左手與雙手，不需要切換模式；想在同一模型混合使用，完成基礎閱讀後接著看「[左手、雙手與混合手勢](#mixed-hands)」。算法仍由學員實作，採集成功不代表目前的正規化已支援所有手勢。
-
-之後每次開啟，只要用這一行。
-
-**Windows PowerShell**
-
-```powershell
-& '.\.venv\Scripts\python.exe' main.py gui
-```
-
-**Mac／Linux**
-
-```bash
 ./.venv/bin/python main.py gui
 ```
 
-1. 在「即時辨識」頁，模式先保持 **preview**（預覽）。
-2. 鏡頭索引先選0，按「開啟鏡頭」。如果沒有鏡頭畫面再切換索引。
-![螢幕擷取畫面 2026-10-10 181529](https://hackmd.io/_uploads/Hy1Kb9woMl.png)
-3. 把右手完整放進畫面，確認手上有點與連線。
-4. 看右側採集頁的偵測文字，確認自己的右手被標為右手。
-![螢幕擷取畫面 2026-10-10 182004](https://hackmd.io/_uploads/rJB_-5vsGx.png)
+Linux 還需安裝與 Python 版本相符的 Tk 和 venv 套件，例如套件來源提供 Python 3.13 的 Ubuntu／Debian 可安裝 `python3.13-tk`、`python3.13-venv`。macOS 使用原生 Apple Silicon Python；各系統都要允許執行工具的程式使用攝影機。
 
-| 常見問題 | 解決方法 |
-|---|---|
-| 鏡頭黑畫面 | 關閉其他使用鏡頭的程式、換索引，確認系統攝影機權限 |
-| 偵測左右手反了 | 關閉工具，修改config.example.json中的swap_handedness，切換其true／false，重開確認 |
+**之後每次開啟只需最後一行 `main.py gui`。** 不必重新安裝套件、下載關節模型或建立環境。VS Code 的 Python Interpreter 請選本專案 `.venv`。在程式中改好算法後，保存檔案、關閉並重開工具，才會載入新版本。
 
->鏡頭權限：Windows在設定的攝影機隱私權允許桌面應用程式；Mac在「系統設定 → 隱私權與安全性 → 攝影機」允許VS Code／Terminal後重啟；Linux需本機桌面與攝影機裝置的存取權限，必要時請管理員協助。請在本機桌面操作，不在WSL或無桌面遠端終端開啟鏡頭GUI。
+## 2. 先認識四個分頁
 
+| 分頁 | 操作 | 成功時看到什麼 |
+| --- | --- | --- |
+| 1. 鏡頭與辨識 | 選攝影機索引、開鏡頭；切換「僅預覽鏡頭」或「辨識並傳送」 | 畫面有手部關節；下方列出左右側原分類、三欄安全輸出與 FPS |
+| 2. 錄製與訓練 | 選通道、動作、用途，錄製後按訓練／測試／載入三通道模型 | 列表顯示類別、train/test、通道、筆數、時間 |
+| 3. 連線遊戲 | 選玩法、填網址與自己的配對碼 | 配對狀態、準備檢查、三欄輸出和競技場執行回饋 |
+| 4. 操作教學 | 查看流程；開啟本 README | 可複製的演算法完整範例和逐步操作 |
 
-<a id="step-4"></a>
-## 4. 錄下十種手勢
+先開啟鏡頭並只伸出一隻手，確認左手、右手標示符合你使用的手。`swap_handedness` 控制這個對應；修改後須重新錄製／檢查資料並重新訓練。預覽模式只送中立遊戲指令，但配對後仍可把鏡頭和骨架傳到網站。
 
-先為每一類想一個**不同的固定姿勢**，把對應記下來。例如張開五指代表跳、握拳代表蹲下；這只是例子，你可以自行設計。想要用左手或者是雙手也都可以，這邊為了簡單選擇使用右手單手進行教學。
+## 3. 選通道，錄製自己的十種手勢
 
-| 類別編號 | 標籤 | 遊戲動作 |
-|---|---|---|
-| 0 | MOVE_LEFT | 向左移動 |
-| 1 | MOVE_RIGHT | 向右移動 |
-| 2 | JUMP | 跳躍 |
-| 3 | CROUCH | 蹲下 |
-| 4 | BLOCK | 格擋 |
-| 5 | NORMAL_ATTACK | 普通攻擊 |
-| 6 | ATTACK_SKILL | 攻擊技能 |
-| 7 | DEFENSE_SKILL | 防禦技能 |
-| 8 | CONTROL_SKILL | 控制技能 |
-| 9 | ULTIMATE | 大招 |
+本版是三個獨立分類器，錄製時必須標註輸出通道。介面選動作時會自動帶入下列建議通道，也可自行設計：
 
-### 先完成一個類別，再換下一個
+| 通道 | 建議錄製的動作 | 入鏡要求 |
+| --- | --- | --- |
+| left | MOVE_LEFT、JUMP、CROUCH | 左手完整入鏡；只用左手特徵 |
+| right | MOVE_RIGHT、NORMAL_ATTACK、ATTACK_SKILL、CONTROL_SKILL | 右手完整入鏡；只用右手特徵 |
+| both | BLOCK、DEFENSE_SKILL、ULTIMATE | 兩手都完整入鏡；使用兩手特徵及相對位置 |
 
-1. 到「採集/訓練」，選一個「錄製類別」，用途選 **train**。
-2. 按「開始錄製」，倒數三秒期間擺好右手。
-![螢幕擷取畫面 2026-10-10 182156](https://hackmd.io/_uploads/S1BWG5Pjfl.png)
-3. 保持姿勢約10～15秒，可以輕微改變位置、距離；確認「有效」筆數增加。
-4. 按「停止錄製」，資料會自動保存，列表出現類別、用途、筆數與時間。
-![螢幕擷取畫面 2026-10-10 182448](https://hackmd.io/_uploads/Sk1e79wsfx.png)
-![螢幕擷取畫面 2026-10-10 182504](https://hackmd.io/_uploads/By4e75PjGx.png)
-5. 同一類改成 **test**，先放下手，再重新擺出姿勢錄一次並保存。
-![螢幕擷取畫面 2026-10-10 182719](https://hackmd.io/_uploads/H1cXmqDsfg.png)
-6. 換下一類，直到十類都有train與test。
+同一隻手可以做不同動作，請設計容易區分的姿勢；例如左手三個姿勢分別代表左移、跳躍、蹲下。不要把「通道」誤認成遊戲的紅方、藍方。
 
-完成時：資料列表中，每一類至少有一筆train和一筆test。
+1. 到「2. 錄製與訓練」，選動作、通道，用途選 `train`。
+2. 按「開始錄製」，倒數三秒內擺好姿勢；確認有效筆數增加。
+3. 每次保持約 10～15 秒，稍微改變位置、距離和角度，按「停止錄製」保存。
+4. 同類別多錄幾批，再把用途改成 `test`，另外擺姿勢重新錄一批。不要把同一段相鄰影格拆成 train 和 test。
+5. 完成十個動作；三個通道都要有可用 train 資料。每個通道的總訓練筆數至少要大於等於 `k`（預設 5）。
+6. 另外測試「左手移動、右手攻擊」同時出現，及單手移出畫面的情境。
 
->需重錄時選對那列，按「刪除所選資料」。
-![螢幕擷取畫面 2026-10-10 182831](https://hackmd.io/_uploads/ByHOX5wizl.png)
+保存到 `data/` 的每批包含 `.npz` 原始關節與同名 `.json`，JSON 記錄 `channel`、`purpose` 和擷取設定。錄製不要求算法先完成；有效筆數代表原始手部資料可採集，不代表正規化已寫好或分類已準確。
 
-保存位置是`data/`，每次有一個.npz（關鍵點、類別）和同名.json（用途等資訊）。這時不用按訓練，先繼續完成下一步的算法。
+三通道訓練只讀 train，獨立測試只讀 test。若是舊版沒有標通道的批次，請先備份到另一個資料夾，再用新版 UI 重錄；程式會明確提示，**不會猜通道、覆蓋舊資料或把舊模型當成新版模型**。
 
-<a id="step-5"></a>
-## 5. 完成三個算法
+## 4. 完成固定 131 維的正規化
 
-你要接手的是這段流程：
+請將下面整段複製到 `student/normalization.py`，替換該檔原本的 TODO。工具會先整理左右手、檢查關節、再依通道傳入資料：left 只有左手、right 只有右手、both 需要兩手。它們都必須輸出同樣的 131 維向量。
 
-```text
-右手21個點 → 正規化成63個數值 → KNN判斷手勢 → 可選濾波 → 競技場
-```
+| 索引 | 意義 |
+| --- | --- |
+| 0～62 | 左手 21 點的 xyz；缺手填 0 |
+| 63～125 | 右手 21 點的 xyz；缺手填 0 |
+| 126～127 | 左、右手存在標記；存在填 2 |
+| 128～130 | 兩手腕相對位置；缺任一手填 0；z 固定為 0 |
 
-只修改下面三個檔案，保留已有的類別、函式名稱與參數，將 `raise NotImplementedError(...)` 換成你的實作。不需要另寫main，也不用自己呼叫鏡頭、讀取錄製檔或連線競技場。
+先把 x、z 乘影像寬，y 乘影像高，換成一致的像素尺度；每隻手減去第 0 點手腕，再除以手腕到第 9 點中指根部的距離。這能處理位置與大小變化，仍保留方向；不保證不同旋轉角度完全相同。
 
-| 順序 | 檔案與函式 | 要解決的問題 | 回傳結果 |
-|---|---|---|---|
-| 先寫 | `student/normalization.py` 的 `transform` | 同一姿勢換位置、變大小，仍能比較 | `FeatureResult`，含63個float32值 |
-| 再寫 | `student/knn.py` 的 `fit`、`predict` | 用已錄製的樣本判斷新手勢 | `fit` 回None；`predict` 回 `Prediction` |
-| 選做 | `student/filtering.py` 的 `update`、`reset` | 避免分類短暫跳動就切換動作 | `update` 回標籤字串；`reset` 回None |
-
-**資料會透過函式參數送進來。** 接下來每段先說明計算方法，再提供可對照的完整實作。先理解每一步，完成基本版本後，再嘗試修改策略。
-
-### A. 正規化：消除位置與大小影響
-
-同一個手勢移到畫面另一邊，所有點的座標都會改變；靠近鏡頭，點之間的距離也會變大。我們先換成一致單位，再讓手腕成為原點，最後除以手掌大小。
-
-#### 第1步：取得資料，換成一致的像素尺度
-
-`transform` 收到的 `sample` 是一筆手部資料。`sample.right` 是21列、3欄的NumPy陣列，每一列代表一個點，每列的三欄依序是x、y、z。`sample.width`、`sample.height` 是影像的像素寬度與高度。
-
-原始x、y使用畫面比例，z使用畫面寬度作為尺度，因此x與z乘以寬度，y乘以高度：
-
-```python
-points = np.array(sample.right, dtype=np.float64, copy=True)
-points[:, 0] *= sample.width
-points[:, 1] *= sample.height
-points[:, 2] *= sample.width
-```
-
-第一行把已有的資料複製成陣列，使用64位元浮點數計算；不是讀檔。`copy=True` 避免後面修改到原始資料。`np` 來自檔案開頭的 `import numpy as np`。
-
-`points[:, 0]` 表示「全部列的第0欄」，也就是21個x；第1欄是y，第2欄是z。例如畫面寬640像素，x為0.5，換算後就是320。
-
-#### 第2步：所有點減去手腕，消除位置影響
-
-第0個點是手腕。Python索引從0開始，所以用 `points[0]` 取得它的xyz：
-
-```python
-wrist = points[0]
-centered = points - wrist
-```
-
-NumPy會讓每一列都減去同一組手腕xyz。手腕因此變成 `(0, 0, 0)`，其餘點表示相對於手腕的位置。當整隻手平移時，這些相對位置不會跟著平移。
-
-#### 第3步：除以手掌大小，消除整體縮放影響
-
-第9個點是中指根部。我們用手腕到中指根部的三維距離代表手掌大小：
-
-```python
-palm_size = np.linalg.norm(centered[9])
-normalized = centered / palm_size
-```
-
-手腕已經在原點，所以 `centered[9]` 就是手腕到中指根部的向量。`np.linalg.norm` 計算向量長度，即 `sqrt(x² + y² + z²)`。
-
-所有座標除以這個長度後，手腕到中指根部的距離變成1。例如某點離手腕40、手掌尺度80，相除是0.5；整體放大兩倍後，80除以160仍是0.5。這能消除整體縮放的影響，但不能保證不同拍攝角度的手勢完全相同。
-
-我們沒有旋轉或翻轉座標，因此仍保留手勢方向。
-
-#### 第4步：排成63個數值並回傳
-
-21個點乘以每點3個數值，共63個值：
-
-```python
-features = normalized.reshape(63).astype(np.float32)
-```
-
-`reshape(63)` 依序排成「第0點x、y、z，第1點x、y、z……」；`astype(np.float32)` 轉成接口要求的32位元浮點數。最後把它放進 `FeatureResult`，工具才知道如何使用。
-
-#### 正規化完整實作
-
-在 `student/normalization.py` 保留原有接口，實作如下：
+兩手各自歸零會失去彼此距離，所以再加入右手腕減左手腕的相對 x、y。每隻手的 z 各有自己的參考原點，不能拿來計算兩手真實深度差。存在標記能區分缺手和全零特徵。
 
 ```python
 import numpy as np
@@ -257,31 +88,42 @@ from core.types import RawHandSample, FeatureResult
 
 class StudentNormalizer:
     def transform(self, sample: RawHandSample, config: dict) -> FeatureResult:
-        # 本入門算法只接受右手單獨入鏡；工具仍可採集左手與雙手。
-        if sample.right is None or sample.left is not None:
+        features = np.zeros(131, dtype=np.float32)
+        wrists = [None, None]
+        sizes = [None, None]
+
+        for slot, hand in enumerate((sample.left, sample.right)):
+            if hand is None:
+                continue
+            points = np.array(hand, dtype=np.float64, copy=True)
+            points *= np.array([sample.width, sample.height, sample.width])
+            wrists[slot] = points[0].copy()
+            centered = points - points[0]
+            sizes[slot] = np.linalg.norm(centered[9])
+            start = slot * 63
+            features[start:start + 63] = (centered / sizes[slot]).reshape(63)
+            features[126 + slot] = 2.0
+
+        if wrists[0] is None and wrists[1] is None:
             return FeatureResult(
-                valid=False,
-                reason='此入門算法僅接受右手單手，混合手勢請使用進階範例',
+                valid=False, reason='無手',
                 featureVersion=config['feature_version'],
             )
-        # 換成一致的像素尺度；建立副本，不修改輸入。
-        points = np.array(sample.right, dtype=np.float64, copy=True)
-        points[:, 0] *= sample.width
-        points[:, 1] *= sample.height
-        points[:, 2] *= sample.width
+        if wrists[0] is not None and wrists[1] is not None:
+            relative = (wrists[1] - wrists[0]) / ((sizes[0] + sizes[1]) / 2)
+            relative[2] = 0.0  # 每隻手的z參考原點不同，只保留相對x、y。
+            features[128:131] = relative
 
-        # 以手腕為原點，再除以手掌尺度。
-        centered = points - points[0]
-        palm_size = np.linalg.norm(centered[9])
-        normalized = centered / palm_size
-
-        features = normalized.reshape(63).astype(np.float32)
         return FeatureResult(
-            valid=True,
-            features=features,
+            valid=True, features=features,
             featureVersion=config['feature_version'],
         )
+
 ```
+
+## 5. KNN：同一份實作，建立三個分類器
+
+每個通道各建立一個 StudentKNN，分別訓練、預測；不把一個分類結果硬拆成三個，也不將左右兩個合法動作壓成一個。下面方法由工具呼叫，學員不用自己寫網路或模型檔讀寫。
 
 ### B. KNN：找出最相似的樣本，再投票
 
@@ -295,7 +137,7 @@ KNN的想法是：新手勢像哪些已錄製的手勢，就讓最相似的k筆�
 
 | 參數 | 內容 |
 |---|---|
-| `features` | `(N, 63)` 陣列，每列是一筆正規化後的手勢；N是樣本數 |
+| `features` | `(N, 131)` 陣列，每列是一筆正規化後的手勢；N是樣本數 |
 | `labels` | `(N,)` 整數陣列，每筆對應同一列手勢的類別編號0～9 |
 | `config` | 包含k、投票門檻與距離門檻的設定 |
 
@@ -315,14 +157,14 @@ self.distance_threshold = config.get('distance_threshold', 1.0)
 
 #### 第2步：在predict計算每筆樣本的距離
 
-`predict` 收到的 `features` 是一筆新手勢，形狀 `(63,)`。讓每筆訓練特徵減去它，再算每一列的長度：
+`predict` 收到的 `features` 是一筆新手勢，形狀 `(131,)`。讓每筆訓練特徵減去它，再算每一列的長度：
 
 ```python
 differences = self.training_features - features
 distances = np.linalg.norm(differences, axis=1)
 ```
 
-相减後仍是 `(N, 63)`；`axis=1` 表示沿每一列的63個數值計算，得到N個距離。這就是歐氏距離：差異的平方相加，再開平方。距離越小，表示兩筆正規化特徵越接近。
+相减後仍是 `(N, 131)`；`axis=1` 表示沿每一列的131個數值計算，得到N個距離。這就是歐氏距離：差異的平方相加，再開平方。距離越小，表示兩筆正規化特徵越接近。
 
 #### 第3步：取最近的k筆樣本
 
@@ -407,6 +249,9 @@ class StudentKNN:
             vote_ratio=ratio,
         )
 ```
+
+
+## 6. 時間濾波（選做，各通道獨立）
 
 ### C. 濾波：快速確認新手勢，略過短暫跳動（選做）
 
@@ -620,225 +465,85 @@ class StudentFilter:
 
 如果動作仍慢，先看KNN的原始分類是否已經穩定，再調整 `hold_seconds` 或 `fast_hold_seconds`；如果常誤切換，可以增加確認時間，或提高 `strong_vote`。每次只改一個參數並記錄結果，保留至少連續兩次確認；也記得 `hold_seconds` 同時控制舊動作的保留時間。
 
-### 接口測試與實際確認
 
-「接口」就是輸入和輸出的約定。完成程式後先保存，再執行：
+## 7. 在 UI 訓練、測試、查看同時輸出
 
-**Windows PowerShell**
+1. 完成正規化與 KNN 後保存檔案，重開工具。濾波先保持關閉。
+2. 到「2. 錄製與訓練」按「訓練」。工具依批次通道建立三個 KNN 分類器，保存到 `models/model.npz`，並自動載入。
+3. 按「測試」；只使用另錄的 test 批次，報告保存到 `models/evaluation.json`，分別列出各通道的樣本數、準確率與混淆矩陣。
+4. 到「1. 鏡頭與辨識」，開鏡頭，切成「辨識並傳送」。這時還不必連線就能看三欄輸出。
+5. 左手做 MOVE_LEFT、右手做 NORMAL_ATTACK，應看到 `left=MOVE_LEFT / right=NORMAL_ATTACK / both=NONE`。
+6. 做雙手 BLOCK，應看到 `left=NONE / right=NONE / both=BLOCK`。雙手合成確認期間也不會偷跑單手動作。
+7. 只移開左手，right 仍應維持可辨識的合法動作；全部無手時三欄都回 NONE。
+8. 下次重開，只需按「載入三通道模型」。改變特徵或 KNN 設定後需要重訓，不能直接套用不相容舊模型。
+
+進階驗證不只看模型分類：獨立測試會檢查最後的三欄路由；若單手被錯誤的雙手分類搶走，也會算錯。KNN 投票比例不是準確率，請另看 test 與真人操作。
+
+## 8. 連上新版競技場
+
+網站：[https://ga-game.codpy.org/](https://ga-game.codpy.org/)。先完成自己的算法、訓練模型、開鏡頭，切換到「辨識並傳送」；「連線遊戲」會顯示哪些步驟尚未完成。
+
+### PVE 一命連戰／假人練習：不需要房號
+
+1. 在網站選 PVE「一命連戰」或「假人練習」。
+2. 控制來源選「手勢辨識器」，按「產生配對碼」。
+3. 工具「3. 連線遊戲」選相同玩法；主機網址保留 `https://ga-game.codpy.org`，房號留空。
+4. 輸入自己網頁當下顯示的六位數配對碼，例如 `012345`；保留開頭的 0，按「配對辨識器」。
+5. 成功後按鈕變成「解除配對」。回網站按「確認準備」，選完技能後倒數開戰。
+6. PVE 按「結束挑戰」會保存未完成紀錄並離開房間；再次遊玩時重新產生配對碼並配對。
+
+### PVP 雙人對決：房號與配對碼不同
+
+1. 一位玩家在網站建立「雙人對決」，把六位數字房號提供給朋友，例如 `123456`。
+2. 朋友輸入房號、加入同一房間。每位手勢玩家各自在自己的網頁選「手勢辨識器」、產生自己的配對碼。
+3. 工具選「PVP 雙人對決」，房號填網站的實際值，例如 `123456`（選填）；配對碼填自己的六位數值。
+4. 兩位玩家使用同一房號，**各自使用不同的配對碼**，不要把朋友的配對碼填到自己的工具。
+5. 雙方配對成功後，回網站各按「確認準備」，自動倒數、選技與開戰。觀戰者不必啟動辨識器。
+
+房號只用來加入同一房間；配對碼用來連接自己的 Python 辨識器。網址不用加 `/controller`。配對碼過期、離開房間或解除配對後需重新產生。使用本地主機時，網站與工具都改用該主機的網址，例如 `http://127.0.0.1:3000` 或主機區網位址。
+
+### 與 Demo／initial 相同的指令規則
+
+- 每幀辨識三個通道；left、right 可同時送出，both 獨占。
+- 指令變化（包含 NONE）立即傳送，相同狀態約每秒補送 10 次；不等待逐包 ACK 才繼續辨識。影像預覽約每 150ms 傳一次，沿用同一支攝影機。
+- 開戰、重置、恢復或換關後先送中立狀態；缺手、低可信度或失聯時清除相關輸出。
+- 移動、蹲下、防禦可持續；跳躍、普攻與技能在進入指令時觸發，需離開該手勢至少 0.1 秒才能再做，維持手勢不會連發。
+- 冷卻、氣量、硬直、大招解鎖、左右相反移動抵銷等規則由同一伺服器判定，不因使用 GUI 而改變。
+- 網站氣條下方有四個小型技能時鐘，鏡頭在技能列下方。收到指令不等於成功施放；工具與網站會顯示等待開戰、中立檢查、硬直、冷卻、氣量不足等原因。
+
+## 9. 檔案、設定與檢查
+
+| 位置 | 用途 | 學員是否需要改 |
+| --- | --- | --- |
+| student/normalization.py | 把一幀手部資料變成固定長度特徵 | 要，複製第 4 節範例後理解並調整 |
+| student/knn.py | 單一分類器的 fit／predict；工具建立三個實例 | 要，第 5 節完整範例 |
+| student/filtering.py | 每個通道各一份時間歷史 | 選做，第 6 節完整範例 |
+| core/channel_model.py | 三個訓練銀行、載入與獨立測試 | 不用 |
+| core/channel_router.py | 左右獨立、雙手優先、缺手清除 | 不用 |
+| network/commands.py、arena_client.py、preview.py | 原子三欄輸出、配對、心跳、網站鏡頭 | 不用 |
+| ui/app.py | 鏡頭、錄製、訓練及配對介面 | 不用 |
+| data/、models/ | 自己的錄製資料和三通道模型 | 請自行備份，不上傳 GitHub |
+
+`config.example.json` 的 k 預設 5、最近距離門檻 1.0、投票門檻 0.6，濾波預設關閉。可複製成 `config.json` 覆寫；本工具使用該檔的設定。修改正規化、左右手設定或 KNN 參數後，請重開工具、重訓並測試；只切換濾波不必重訓。
+
+Windows 執行共用工具測試：
 
 ```powershell
-& '.\.venv\Scripts\python.exe' -m pytest tests/test_student_contracts.py tests/test_filtering.py
+.\.venv\Scripts\python.exe -m pytest -q
 ```
 
-**Mac／Linux**
+`student` 的 TODO 測試顯示 skipped，表示尚未實作，不能當成算法通過。README 的範例也有測試，但測試不會把答案寫進 student 檔案。仍需使用自己的資料與真人操作驗證。
 
-```bash
-./.venv/bin/python -m pytest tests/test_student_contracts.py tests/test_filtering.py
-```
+| 現象 | 檢查方式 |
+| --- | --- |
+| 鏡頭有畫面，卻一直說算法未完成 | 先完成 student 範例、保存並重開工具；錄製成功不代表算法已完成 |
+| 某通道沒有訓練資料 | 選正確通道重新錄製；left 需左手、right 需右手、both 需兩手 |
+| 顯示舊批次／舊模型 | 備份舊資料，使用新版 UI 另錄三通道資料並重訓；不會自動把舊單通道模型升級 |
+| 模型已載入但一直 NONE | 確認選「辨識並傳送」、相應的手完整入鏡，並檢查 KNN 距離與投票門檻 |
+| 已配對，網站不能準備 | 查看「連線遊戲」的鏡頭、模式、模型與算法狀態，先完成實作和訓練 |
+| 有收到指令但沒有動作 | 查看執行回饋與網站冷卻時鐘，區分暫停、硬直、氣量不足或需要回中立 |
+| 手勢維持著卻不連續攻擊 | 先離開該指令至少 0.1 秒，再做一次；這是所有玩家共同的觸發規則 |
+| 右手被左手消失影響 | 新版左右通道獨立；檢查自己的 normalizer 是否錯把缺任一手當作全部無效 |
+| 延遲或 FPS 偏低 | 先關閉不必要的攝影機程式；看工具底部 FPS／辨識耗時，並分別檢查分類穩定度與網路 |
 
-看到 `passed` 表示通過這份測試涵蓋的檢查，還需要在下一節訓練與實測，確認辨識效果。
-
-<a id="step-6"></a>
-## 6. 訓練並試試辨識效果
-
-1. 保存程式，關閉工具再重新開啟，讓它載入新程式。
-2. 在「採集/訓練」按 **訓練**。工具只使用train資料，成功後會自動載入模型。
-3. 按 **測試**，使用test檢查模型。報告會存成`models/evaluation.json`。
-![螢幕擷取畫面 2026-10-10 200526](https://hackmd.io/_uploads/BkH89svoMx.png)
-4. 到「即時辨識」，開鏡頭，把preview改成 **recognize**（辨識）。
-5. 逐一做十個姿勢，再把手移出畫面，確認停止輸出。
-![螢幕擷取畫面 2026-10-10 200715](https://hackmd.io/_uploads/Hydi5iviGg.png)
-
-> 下次重開工具，要先按「載入KNN模型」，不必每次重新訓練。
-![螢幕擷取畫面 2026-10-10 200826](https://hackmd.io/_uploads/rypAcsDofg.png)
-
-<a id="step-7"></a>
-## 7. 連上競技場
-
-1. 網站進「假人練習」，控制來源選「手勢辨識器」，按「產生配對碼」。
-![螢幕擷取畫面 2026-10-10 201741](https://hackmd.io/_uploads/S1zyCoPizg.png)
-![螢幕擷取畫面 2026-10-10 201915](https://hackmd.io/_uploads/SkOxRivizx.png)
-2. Python工具載入模型、開鏡頭、切recognize，先做一個手勢確認分類可用。
-![螢幕擷取畫面 2026-10-10 201841](https://hackmd.io/_uploads/BkI1RsDsfe.png)
-4. 到「配對」填主機網址和配對碼；單人練習房間碼留空。
-![螢幕擷取畫面 2026-10-10 201931](https://hackmd.io/_uploads/HyCx0jwsfl.png)
-4. 按「配對」。成功後按鈕會變成「解除配對」。
-5. 網站顯示辨識器已連線、算法可用後，按「確認準備」，選技能並等待倒數。
-6. 試左右移動、普通攻擊與技能；最後把手移開，確認角色停止接收動作。
-
-<a id="Optimize-KNN"></a>
-## 選做：優化KNN
-
-學員可以調整 `k`、`vote_threshold`、`distance_threshold`。直接修改專案內的 `config.example.json`。JSON數值不要加引號，並保留正確逗號格式。
-
-| 參數 | 預設值 | 允許範圍與用途 |
-|---|---|---|
-| `k` | 5 | 正整數，不可超過實際可用的訓練樣本數；決定取幾個最近鄰居投票 |
-| `vote_threshold` | 0.6 | 0～1；最低得票比例，越高越要求鄰居分類一致，可能增加NONE |
-| `distance_threshold` | 1.0 | 非負有限數值；最近距離的拒絕門檻，越小越嚴格，可能增加NONE。單位是正規化特徵距離，不是像素或公分 |
-
-例如k=5、vote_threshold=0.6時，至少3個鄰居投同一類才符合投票條件；是否接受分類仍取決於你實作的距離拒絕規則。不要把投票比例當成實際辨識準確率。
-
-**設定不會自動替你實作算法。** 你的 `fit` 必須讀取設定並存到self，`predict` 必須實際使用它們。可用的讀取方式：
-
-```python
-config.get('k', 5)
-config.get('vote_threshold', 0.6)
-config.get('distance_threshold', 1.0)
-```
-
-`get` 的第二個參數是欄位缺少時的預設值；只有呼叫get而沒有保存、使用結果，不會改變分類行為。若在算法中把k或門檻寫死，修改JSON也不會生效。
-
-修改後依序：
-
-1. 保存 `config.example.json`，關閉並重開工具，讓設定重新載入。
-2. 按「訓練」，以新設定重新建立並載入模型；目前模型相容檢查包含這些參數，舊模型不能直接用新設定載入。
-3. 按「測試」，比較獨立test結果，再做即時辨識。
-
-建議每次只改一個參數並記錄結果。只調KNN參數通常不用重新採集；修改正規化特徵定義則需要重新計算特徵並訓練。工具接受左手、右手與雙手，是否能分類取決於你的正規化及訓練資料。舊設定hand_mode、single_hand與mirror_left已不控制採集；特徵中的翻轉策略由學員實作。
-
-<a id="mixed-hands"></a>
-## 選做：左手、雙手與混合手勢
-
-要開放更多手勢，請用本節的正規化替換第5節A的入門版本，並重新訓練。**同一份資料、同一個模型可以同時包含左手單手、右手單手與雙手手勢，不需要切換模式，也不強迫十種類別都用雙手。**
-
-不論使用幾隻手，整個姿勢每次只對應一個遊戲動作。雙手共同代表一個類別，例如雙手張開代表BLOCK；不是左手輸出移動、右手同時輸出攻擊。分類器回傳一個`Prediction`，其label是十個動作之一；拒絕分類則回NONE。
-
-### 設計、採集與缺手
-
-1. 為各類別記錄使用哪隻手、手型及兩手的相對位置。例如MOVE_LEFT用左手、MOVE_RIGHT用右手、BLOCK用雙手。
-2. 同一類的train與test使用相同設計；若同一動作有多種替代姿勢，每種都各錄train與test。
-3. 雙手類別錄製時確認左右手都有關鍵點；雙手遮擋、交叉或靠太近可能造成偵測失敗。畫面左右位置不代表解剖學左右手，請分別伸出左、右手確認標示，需要時調整swap_handedness。
-4. 原始資料採集只要求至少一隻有效的手，不知道你選的類別需要幾隻手。錄雙手類別時若漏掉一隻，工具仍可能收進單手資料；請檢查偵測文字，出錯的批次重錄。
-5. 分類拒絕、無手或無效追蹤時應輸出NONE。雙手少一隻時也可能成為有效的已訓練單手姿勢，不能一律停止所有單手分類；請測試這些過渡姿勢，必要時改手勢或在算法中增加拒絕條件。
-
-`sample.left`與`sample.right`各是`(21,3)`陣列，未偵測到的手是`None`。保存檔原本就有左右兩個欄位及存在標記，因此舊右手原始資料可繼續重算特徵；要學新的左手或雙手姿勢仍須補錄。
-
-### 固定長度的混合手勢特徵
-
-工具接受學員自訂的非空一維float32特徵`(D,)`，但**同一模型所有樣本的D與欄位意義必須一致**。不能單手回63維、雙手回126維。以下範例固定使用131維：
-
-| 索引 | 內容 |
-|---|---|
-| 0～62 | 左手：手腕歸零、除以自己的手掌大小；缺手填0 |
-| 63～125 | 右手：同樣正規化；缺手填0 |
-| 126～127 | 左、右手存在標記；存在填2，缺手填0 |
-| 128～130 | 右手腕減左手腕的xyz，除以兩手平均手掌大小；缺任一手填0 |
-
-各手的63維保留手型與方向；最後3維保留兩手的相對位置，避免兩手各自歸零後丟失這項資訊。左、右欄位固定，不能按偵測順序或畫面左右排列。兩手深度z各有自己的參考原點，因此相對位置的z在此填0，只使用可靠的影像平面x、y；不是兩手真實三維距離。
-
-存在標記使用2作為距離權重，讓缺手與握拳不會只靠零值混在一起。用本範例的歐氏距離及distance_threshold=1.0時，手數／左右存在狀態不相同的樣本距離至少2，會被拒絕；若提高門檻，這項保護也會變弱。可自行調整特徵權重，但要重新評估門檻。
-
-### 混合手勢正規化完整實作
-
-以下整段替換`student/normalization.py`。保留原有類別及函式接口，不要把兩份transform放在同一類別中。
-
-```python
-import numpy as np
-from core.types import RawHandSample, FeatureResult
-
-
-class StudentNormalizer:
-    def transform(self, sample: RawHandSample, config: dict) -> FeatureResult:
-        features = np.zeros(131, dtype=np.float32)
-        wrists = [None, None]
-        sizes = [None, None]
-
-        for slot, hand in enumerate((sample.left, sample.right)):
-            if hand is None:
-                continue
-            points = np.array(hand, dtype=np.float64, copy=True)
-            points *= np.array([sample.width, sample.height, sample.width])
-            wrists[slot] = points[0].copy()
-            centered = points - points[0]
-            sizes[slot] = np.linalg.norm(centered[9])
-            start = slot * 63
-            features[start:start + 63] = (centered / sizes[slot]).reshape(63)
-            features[126 + slot] = 2.0
-
-        if wrists[0] is None and wrists[1] is None:
-            return FeatureResult(
-                valid=False, reason='無手',
-                featureVersion=config['feature_version'],
-            )
-        if wrists[0] is not None and wrists[1] is not None:
-            relative = (wrists[1] - wrists[0]) / ((sizes[0] + sizes[1]) / 2)
-            relative[2] = 0.0  # 每隻手的z參考原點不同，只保留相對x、y。
-            features[128:131] = relative
-
-        return FeatureResult(
-            valid=True, features=features,
-            featureVersion=config['feature_version'],
-        )
-```
-
-共用工具會先檢查入鏡的每隻手：尺寸、21個點、有限數值及至少10px的手掌尺度，再呼叫此算法。算法可以自行拒絕不支援的樣本，但必須回傳`valid=False`且features為None。
-
-### KNN、版本與重新訓練
-
-第5節B的KNN完整實作可直接沿用：NumPy減法與axis=1會自動處理D個欄位，程式沒有把維度寫死。該節的63維解說對應右手入門版本；本節fit收到`(N,131)`，predict收到`(131,)`。自訂特徵也遵循`(N,D)`與`(D,)`的接口。
-
-修改特徵欄位、維度、正規化或權重後：
-
-1. 更新實際使用設定檔的feature_version，例如`mixed-hands-131-v1`。一般使用config.example.json；若有config.json，工具優先讀取它。相同維度也可能有不同意義，工具不能自動判斷算法內容，請主動更新版本。
-2. 保存算法與設定，關閉並重開工具。
-3. 用原始資料重新「訓練」，再「測試」。工具會記錄模型維度與版本，拒絕不相容的模型或辨識輸入。舊格式的KNN模型需重新訓練。
-4. 實測左手、右手、雙手、兩手位置變化、單雙手切換、雙手缺一手，以及全部離開畫面；確認每次只有一個動作，未知姿勢能拒絕，無手時停止輸出。
-
-特徵變長後，舊距離門檻不一定合適。保持train／test獨立，再依實測調整k、距離與投票門檻。每種類別都需要足夠樣本，單手與雙手樣本數也應避免差距過大。
-
-<a id="others"></a>
-## 其它
-
-<details>
-<summary>各個資料夾與設定檔在做什麼？</summary>
-
-| 位置 | 用途 | 學員要改嗎？ |
-|---|---|---|
-| student | 正規化、KNN、濾波算法 | 要，濾波選做 |
-| data | 錄製後生成的原始關鍵點與用途 | 用介面管理 |
-| models | 訓練後生成的個人模型、測試報告 | 不手改 |
-| .venv | 本機Python與套件，每台電腦自行建立 | 不手改 |
-| .vscode | 編輯器解譯器與測試設定 | 通常不用 |
-| assets | MediaPipe關鍵點模型，不是個人KNN模型 | 不用 |
-| core、ui、network | 鏡頭、資料讀寫、介面、安全檢查、配對 | 不用 |
-| protocol | 與競技場共用的標籤與訊息格式 | 不用 |
-| tests | 接口與共用工具測試 | 執行即可 |
-| requirements-lock.txt | 固定套件版本，含間接依賴 | 不用 |
-| pyproject.toml | 專案與pytest設定 | 不用 |
-| config.example.json | 工具設定，直接在此調整KNN參數 | 需要時再調 |
-| .gitignore | 避免把環境、個人資料與模型加入Git | 不用 |
-
-套件損壞時可重新安裝requirements-lock，必要時重建.venv；保留student、data、models與你修改過的config.example.json。不要任意升級套件。
-
-</details>
-
-<details>
-<summary>工具怎麼呼叫我的算法？</summary>
-
-| 你的函式 | 共用工具入口 | 結果去向 |
-|---|---|---|
-| transform | core/features.py的feature | 檢查後交給訓練或分類 |
-| fit | core/model_io.py的訓練、載入 | 保存資料／重建分類器 |
-| predict | ui/app.py即時辨識、core/model_io.py測試 | 評估、濾波或直接輸出 |
-| update、reset | core/features.py的OutputRouter | 控制輸出與清除歷史 |
-
-訓練只讀train，測試只讀test；共用工具先驗證至少一隻手及所有入鏡手的尺寸、數值與手掌尺度，再呼叫正規化。你只要使用參數、計算並return。正規化定義改變後需要更新設定檔的feature_version、重算特徵並重新訓練；main.py不再固定特徵版本或限定右手。
-
-</details>
-
-<details>
-<summary>第三方資源與授權</summary>
-
-
-本工具只使用 Hand Landmarker，不使用 Gesture Recognizer。
-
-模型保存位置：`assets/models/hand_landmarker.task`。
-來源：https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task
-SHA-256：`fbc2a30080c3c557093b5ddfc334698132eb341044ccee322ccf8bcf3607cde1`。
-MediaPipe 原始碼採 Apache-2.0；官方模型依官方模型資源與使用條款使用。官方指南：https://ai.google.dev/edge/mediapipe/solutions/vision/hand_landmarker/python 。部署前確認組織適用條款。
-
-OpenCV（Apache-2.0）、NumPy（BSD-3-Clause）、python-socketio（MIT）、Pillow（HPND）、pytest（MIT）及其依賴的授權隨安裝套件保存；完整版本在 requirements-lock.txt。
-安裝時可下載，活動執行不下載模型。未提供離線套件安裝包，不複製 .venv 到其他電腦。
-
-</details>
+UI 是完整新版功能的另一個入口，並非自動完成作業的辨識器；模型準確度仍取決於自己錄的資料和實作。

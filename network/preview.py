@@ -39,10 +39,11 @@ def encode_preview(frame, sample):
         hands.append([{'x': float((px * resized_width + offset_x) / WIDTH),
                        'y': float((py * resized_height + offset_y) / HEIGHT)}
                       for px, py in zip(x, y)])
-    ok, jpeg = cv2.imencode('.jpg', canvas, [cv2.IMWRITE_JPEG_QUALITY, 55])
-    if not ok:
-        return None
-    image = 'data:image/jpeg;base64,' + base64.b64encode(jpeg).decode('ascii')
-    if len(image) > 48000:
-        return {'hands': hands}
-    return {'image': image, 'hands': hands}
+    for quality in (55,35,20):
+        ok, jpeg = cv2.imencode('.jpg', canvas, [cv2.IMWRITE_JPEG_QUALITY, quality])
+        if not ok:
+            break
+        image = 'data:image/jpeg;base64,' + base64.b64encode(jpeg).decode('ascii')
+        if len(image) <= 48000:
+            return {'image': image, 'hands': hands}
+    return {'hands': hands}

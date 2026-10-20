@@ -36,8 +36,8 @@ def main():
         if args.command=='record':app.tabs.select(1)
         app.run();return
     if args.command in ('train','test'):
-        from core.model_io import train,evaluate
-        result=(train if args.command=='train' else evaluate)(list((ROOT/'data').glob('*.npz')),ROOT/'models/knn.npz',settings);print(json.dumps(result,ensure_ascii=False,indent=2));return
+        from core.channel_model import train,evaluate
+        result=(train if args.command=='train' else evaluate)(list((ROOT/'data').glob('*.npz')),ROOT/'models/model.npz',settings);print(json.dumps(result,ensure_ascii=False,indent=2));return
 if __name__=='__main__':
     try:main()
     except KeyboardInterrupt:pass

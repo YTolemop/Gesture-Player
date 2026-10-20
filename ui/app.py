@@ -2,6 +2,7 @@ import json
 import queue
 import threading
 import time
+import webbrowser
 from pathlib import Path
 import tkinter as tk
 from tkinter import ttk, messagebox
@@ -9,18 +10,22 @@ import cv2
 from PIL import Image, ImageTk
 from core.camera import Camera
 from core.landmarks import Landmarks
-from core.features import OutputRouter, feature, raw_valid
+from core.features import raw_valid
+from core.channel_router import OutputRouter
+from core.channel_model import train, evaluate, load_model, vector, channel_sample
+from core.types import Prediction
 from core.labels import LABELS
 from core.dataset import save_batch, read_batch
-from core.model_io import train, evaluate, load_model
 from network.arena_client import ArenaClient
+from network.commands import CHANNELS, DEFAULT_CHANNELS
+from network.pairing import SERVER, pairing_values, server_url
 
 ROOT=Path(__file__).resolve().parents[1]
 CONNECTIONS=[(0,1),(1,2),(2,3),(3,4),(0,5),(5,6),(6,7),(7,8),(5,9),(9,10),(10,11),(11,12),(9,13),(13,14),(14,15),(15,16),(13,17),(0,17),(17,18),(18,19),(19,20)]
 
 class App:
     def __init__(self,config):
-        self.config=config;self.root=tk.Tk();self.root.title('手勢訓練器')
+        self.config=config;self.root=tk.Tk();self.root.title('手勢訓練器 · 新版三通道 GUI 學員版')
         self.root.geometry(f'{min(1150,self.root.winfo_screenwidth()-80)}x{min(850,self.root.winfo_screenheight()-100)}')
         self.root.minsize(720,480)
         self.router=OutputRouter();self.camera=None;self.landmarks=None;self.model=None;self.client=None
@@ -32,15 +37,19 @@ class App:
         self.normalization_reason=''
         self.sent_availability=None
         self.pair_busy=False;self.batch_paths={}
+        self.record_channel='left';self.connection_notice='尚未配對；先在網站選擇玩法並產生自己的配對碼'
         self.tool_notifications=queue.Queue()
+        self.tool_busy=False
         main=ttk.Frame(self.root,padding=15);main.pack(fill='both',expand=True)
-        ttk.Label(main,text='手勢訓練器',font=('Microsoft JhengHei',22,'bold')).pack(anchor='w',pady=(0,10))
+        ttk.Label(main,text='手勢訓練器 · 三通道',font=('Microsoft JhengHei',22,'bold')).pack(anchor='w')
+        ttk.Label(main,text='錄製 → 完成範例程式 → 訓練與測試 → 連線遊玩；左右手可同時操作，雙手合成優先。').pack(anchor='w',pady=(3,10))
         self.tabs=ttk.Notebook(main);self.tabs.pack(fill='both',expand=True)
         preview=ttk.Frame(self.tabs,padding=12);connect=ttk.Frame(self.tabs,padding=12);data=ttk.Frame(self.tabs,padding=12)
-        self.tabs.add(preview,text='即時辨識');self.tabs.add(data,text='採集/訓練');self.tabs.add(connect,text='配對')
+        self.tabs.add(preview,text='1. 鏡頭與辨識');self.tabs.add(data,text='2. 錄製與訓練');self.tabs.add(connect,text='3. 連線遊戲')
+        connect,self.connection_canvas=self.scroll_page(connect)
         bar=ttk.Frame(preview);bar.pack(fill='x');self.camera_index=tk.StringVar(value='0');ttk.Label(bar,text='鏡頭索引').pack(side='left');ttk.Combobox(bar,textvariable=self.camera_index,values=['0','1','2','3'],width=5).pack(side='left',padx=8)
         ttk.Button(bar,text='開啟鏡頭',command=self.start_camera).pack(side='left');ttk.Button(bar,text='停止鏡頭',command=self.stop_camera).pack(side='left',padx=8)
-        self.mode_var=tk.StringVar(value='preview');ttk.Combobox(bar,textvariable=self.mode_var,values=['preview','recognize'],state='readonly',width=12).pack(side='left');self.mode_var.trace_add('write',lambda *_:setattr(self,'mode',self.mode_var.get()))
+        self.mode_var=tk.StringVar(value='僅預覽鏡頭');ttk.Combobox(bar,textvariable=self.mode_var,values=['僅預覽鏡頭','辨識並傳送'],state='readonly',width=14).pack(side='left');self.mode_var.trace_add('write',lambda *_:self.change_mode())
         self.filter_var=tk.BooleanVar(value=False);ttk.Checkbutton(bar,text='使用學員濾波（選做）',variable=self.filter_var,command=self.change_filter).pack(side='left',padx=8)
         self.details=ttk.Label(preview,text='',wraplength=1000);self.details.pack(side='bottom',fill='x')
         preview_area=ttk.Frame(preview);preview_area.pack(fill='both',expand=True,pady=10)
@@ -49,7 +58,7 @@ class App:
         controls=ttk.Frame(data_page);controls.pack(side='left',fill='y',padx=(0,16))
         actions=ttk.Frame(controls);actions.pack(side='bottom',fill='x',pady=(8,0))
         self.training_buttons=[]
-        for title,fn in [('訓練',self.train),('測試',self.evaluate),('載入KNN模型',self.load)]:
+        for title,fn in [('訓練',self.train),('測試',self.evaluate),('載入三通道模型',self.load)]:
             button=ttk.Button(actions,text=title,command=lambda fn=fn,title=title:self.background(fn,title))
             button.pack(side='left',padx=(0,4));self.training_buttons.append(button)
         scroll_area=ttk.Frame(controls);scroll_area.pack(fill='both',expand=True)
@@ -63,11 +72,15 @@ class App:
         self.capture_controls=canvas
         capture=ttk.LabelFrame(data_page,text='採集即時預覽',padding=10);capture.pack(side='right',fill='both',expand=True)
         self.capture_status=ttk.Label(capture,text='',wraplength=420);self.capture_status.pack(anchor='w',pady=5)
-        ttk.Label(capture,text='可錄左手、右手或雙手；同一類保持相同手勢與手數，每次只對應一個動作。',wraplength=420).pack(side='bottom',anchor='w',pady=(10,0))
+        ttk.Label(capture,text='left 只錄左手動作；right 只錄右手動作；both 錄雙手合成。遊玩時左右通道可同時送出。',wraplength=420).pack(side='bottom',anchor='w',pady=(10,0))
         capture_area=ttk.Frame(capture);capture_area.pack(fill='both',expand=True)
-        self.capture_preview=ttk.Label(capture_area,text='請先到「即時辨識」開啟鏡頭',anchor='center')
+        self.capture_preview=ttk.Label(capture_area,text='請先到「1. 鏡頭與辨識」開啟鏡頭',anchor='center')
         self.capture_preview.place(relwidth=1,relheight=1)
-        self.class_var=tk.StringVar(value=LABELS[0]);self.purpose_var=tk.StringVar(value='train')
+        self.class_var=tk.StringVar(value=LABELS[0]);self.purpose_var=tk.StringVar(value='train');self.channel_var=tk.StringVar(value='left')
+        self.class_var.trace_add('write',lambda *_:self.channel_var.set(DEFAULT_CHANNELS.get(self.class_var.get(),'left')))
+        self.channel_var.trace_add('write',lambda *_:setattr(self,'record_channel',self.channel_var.get()) if not self.recording and not self.record_pending else None)
+        ttk.Label(data,text='輸出通道（分類器分開訓練）').pack(anchor='w')
+        ttk.Combobox(data,textvariable=self.channel_var,values=CHANNELS,state='readonly').pack(anchor='w',pady=5)
         for title,var,values in [('錄製類別',self.class_var,LABELS[:10]),('用途',self.purpose_var,['train','test'])]:
             ttk.Label(data,text=title).pack(anchor='w');ttk.Combobox(data,textvariable=var,values=values,state='readonly').pack(anchor='w',pady=5)
         record_bar=ttk.Frame(data);record_bar.pack(anchor='w',pady=5)
@@ -77,17 +90,78 @@ class App:
         self.stop_record_button.pack(anchor='w',pady=5)
         self.counts=ttk.Label(data,text='有效 0 筆');self.counts.pack(anchor='w',pady=5)
         ttk.Label(data,text='錄製資料').pack(anchor='w',pady=10)
-        self.files=ttk.Treeview(data,columns=('label','purpose','count','time'),show='headings',height=8,selectmode='browse')
-        for key,title,width in [('label','類別',150),('purpose','用途',55),('count','筆數',50),('time','錄製時間',130)]:
+        self.files=ttk.Treeview(data,columns=('label','purpose','channel','count','time'),show='headings',height=8,selectmode='browse')
+        for key,title,width in [('label','類別',125),('purpose','用途',45),('channel','通道',55),('count','筆數',45),('time','錄製時間',110)]:
             self.files.heading(key,text=title);self.files.column(key,width=width,stretch=False)
         self.files.pack(anchor='w');ttk.Button(data,text='刪除所選資料',command=self.delete_batch).pack(anchor='w',pady=5)
-        self.server_var=tk.StringVar(value='http://127.0.0.1:3000');self.room_var=tk.StringVar();self.pair_var=tk.StringVar()
-        for title,var in [('主機網址（其他筆電使用主機區網IP）',self.server_var),('房間碼（選填，單人留空）',self.room_var),('一次性配對碼',self.pair_var)]:
-            ttk.Label(connect,text=title).pack(anchor='w',pady=5);ttk.Entry(connect,textvariable=var,width=60).pack(anchor='w')
-        self.pair_button=ttk.Button(connect,text='配對',command=self.toggle_pair);self.pair_button.pack(anchor='w',pady=10)
+        ttk.Label(connect,text='把這個辨識器連到自己的網頁',font=('Microsoft JhengHei',16,'bold')).pack(anchor='w',pady=(0,8))
+        self.play_var=tk.StringVar(value='PVE 一命連戰')
+        ttk.Label(connect,text='網站玩法（此處提供填寫提示，仍需先在網站建立遊戲）').pack(anchor='w')
+        ttk.Combobox(connect,textvariable=self.play_var,values=['PVE 一命連戰','PVP 雙人對決','假人練習'],state='readonly',width=28).pack(anchor='w',pady=5)
+        self.play_var.trace_add('write',lambda *_:self.change_play())
+        self.server_var=tk.StringVar(value=SERVER);self.room_var=tk.StringVar();self.pair_var=tk.StringVar()
+        digits=(self.root.register(lambda text:not text or (text.isascii() and text.isdigit() and len(text)<=6)),'%P')
+        for title,var in [('主機網址',self.server_var),('PVP 六位數字房號（選填，例如 123456）',self.room_var),('自己的六位數配對碼（保留開頭的 0）',self.pair_var)]:
+            ttk.Label(connect,text=title).pack(anchor='w',pady=5)
+            entry=ttk.Entry(connect,textvariable=var,width=60)
+            if var is not self.server_var:entry.configure(validate='key',validatecommand=digits)
+            entry.pack(anchor='w')
+            if var is self.room_var:self.room_entry=entry
+        self.play_hint=tk.StringVar();ttk.Label(connect,textvariable=self.play_hint,wraplength=950).pack(anchor='w',pady=8)
+        self.change_play()
+        pair_actions=ttk.Frame(connect);pair_actions.pack(anchor='w',pady=8)
+        ttk.Button(pair_actions,text='開啟競技場網頁',command=self.open_arena).pack(side='left',padx=(0,10))
+        self.pair_button=ttk.Button(pair_actions,text='配對辨識器',command=self.toggle_pair);self.pair_button.pack(side='left')
+        self.connection_text=tk.StringVar(value=self.connection_notice);ttk.Label(connect,textvariable=self.connection_text,wraplength=950).pack(anchor='w',pady=8)
+        self.readiness_text=tk.StringVar();ttk.Label(connect,textvariable=self.readiness_text,wraplength=950).pack(anchor='w',pady=8)
+        self.feedback_text=tk.StringVar(value='競技場回饋：尚未配對');ttk.Label(connect,textvariable=self.feedback_text,wraplength=950).pack(anchor='w',pady=8)
+        guide=ttk.Frame(self.tabs,padding=15);self.tabs.add(guide,text='4. 操作教學')
+        guide,self.guide_canvas=self.scroll_page(guide)
+        ttk.Label(guide,text='與新版競技場相同的三通道能力',font=('Microsoft JhengHei',16,'bold')).pack(anchor='w',pady=(0,12))
+        tutorial=('1. 先開啟鏡頭，確認左手與右手標示正確。\n\n'
+            '2. 錄製時選 left、right 或 both，再選動作與 train／test；三個通道都要收集資料。\n\n'
+            '3. README 提供可整段複製的 131 維正規化、KNN 與選做濾波。student 檔案仍保留作業起點，程式修改後需重開工具。\n\n'
+            '4. 按「訓練」建立三個分類器，按「測試」查看獨立測試結果，再切到「辨識並傳送」。\n\n'
+            '5. 在網站選 PVP、PVE 或練習，產生配對碼，再到「連線遊戲」配對。PVE 不需房號。\n\n'
+            '6. 左右手可同時送出；雙手合成成功時獨占。技能冷卻與觸發規則和其他玩家完全相同。')
+        ttk.Label(guide,text=tutorial,wraplength=950,justify='left').pack(anchor='w',fill='x')
+        ttk.Button(guide,text='開啟完整 README 與可複製程式碼',command=lambda:webbrowser.open((ROOT/'README.md').as_uri())).pack(anchor='w',pady=15)
+        self.status_var=tk.StringVar(value=self.notice);ttk.Label(main,textvariable=self.status_var,wraplength=1050).pack(side='bottom',fill='x',pady=(8,0))
         self.root.protocol('WM_DELETE_WINDOW',self.close);self.root.after(50,self.render);self.refresh_files()
 
+    @staticmethod
+    def scroll_page(parent):
+        canvas=tk.Canvas(parent,highlightthickness=0)
+        scroll=ttk.Scrollbar(parent,orient='vertical',command=canvas.yview)
+        scroll.pack(side='right',fill='y');canvas.pack(side='left',fill='both',expand=True)
+        canvas.configure(yscrollcommand=scroll.set)
+        content=ttk.Frame(canvas)
+        item=canvas.create_window((0,0),window=content,anchor='nw')
+        content.bind('<Configure>',lambda _:canvas.configure(scrollregion=canvas.bbox('all')))
+        def resize(event):
+            canvas.itemconfigure(item,width=event.width)
+            for child in content.winfo_children():
+                if isinstance(child,ttk.Label):child.configure(wraplength=max(240,event.width-24))
+        canvas.bind('<Configure>',resize)
+        return content,canvas
+
+    def change_mode(self):
+        self.mode='recognize' if self.mode_var.get()=='辨識並傳送' else 'preview'
+        self.router.clear(self.filter_enabled)
+
+    def change_play(self):
+        pvp=self.play_var.get().startswith('PVP')
+        self.room_entry.config(state='normal' if pvp else 'disabled')
+        if not pvp:self.room_var.set('')
+        self.play_hint.set('先在網站建立或加入同一房間。房號六位數字；每位玩家使用自己的配對碼。' if pvp else '先在網站選擇此玩法，控制來源選「手勢辨識器」並產生配對碼。房號留空即可。')
+
+    def open_arena(self):
+        try:webbrowser.open(server_url(self.server_var.get()))
+        except ValueError as exc:messagebox.showerror('網址格式',str(exc),parent=self.root)
+
     def background(self,fn,operation=None):
+        if operation and self.tool_busy:return
+        if operation:self.tool_busy=True
         def run():
             try:
                 result=fn()
@@ -95,6 +169,8 @@ class App:
             except Exception as exc:
                 self.notice=f'工具提示：{exc}（算法TODO不等於安裝失敗）'
                 if operation:self.tool_notifications.put(('error',f'{operation}失敗',str(exc)))
+            finally:
+                if operation:self.tool_busy=False
         threading.Thread(target=run,daemon=True).start()
 
     def start_camera(self):
@@ -119,33 +195,35 @@ class App:
                 sample=self.landmarks.detect(frame,timestamp,self.camera.actual);sample.batch=self.record_batch
                 client=self.client
                 if client:client.preview(frame,sample)
-                tracked,reason=raw_valid(sample,self.config);result=None;pred=None
+                tracked,reason=raw_valid(channel_sample(sample,self.record_channel),self.config)
+                results={};predictions={channel:Prediction() for channel in CHANNELS}
                 self.capture_reason=reason
                 self.hand_status='、'.join(name for name,hand in [('左手',sample.left),('右手',sample.right)] if hand is not None) or '無手（或左右手判定可信度不足）'
                 self.normalization_reason=''
                 try:
-                    result=feature(sample,self.config)
-                    if result.valid:self.algorithm_status['normalization']=True
+                    results={channel:vector(sample,channel,self.config) for channel in CHANNELS}
+                    if any(result.valid for result in results.values()):self.algorithm_status['normalization']=True
                     else:
-                        self.normalization_reason=result.reason or '正規化未接受此樣本'
+                        self.normalization_reason='目前沒有通道可接受的手部特徵'
                         reason=self.normalization_reason
                 except Exception as exc:
                     self.algorithm_status['normalization']=False;reason=str(exc)
                     self.normalization_reason=reason
-                if self.mode=='recognize' and result and result.valid:
+                if self.mode=='recognize' and results:
                     if self.model is None:reason='請訓練或載入個人KNN模型'
                     else:
-                        pred=self.model.predict(result.features);self.algorithm_status['knn']=True
-                self.raw_result=pred
-                self.router.update(pred,tracked=tracked and pred is not None,enabled=self.filter_enabled)
+                        predictions={channel:self.model.models[channel].predict(result.features) if result.valid else Prediction() for channel,result in results.items()}
+                        self.algorithm_status['knn']=True
+                self.raw_result=predictions
+                self.router.update(predictions,enabled=self.filter_enabled)
                 if self.router.error:reason=self.router.error;self.algorithm_status['filter']=False
-                elif self.filter_enabled and pred:self.algorithm_status['filter']=True
+                elif self.filter_enabled and any(pred.valid for pred in predictions.values()):self.algorithm_status['filter']=True
                 self.sync_availability()
                 now=time.monotonic()
                 with self.record_lock:
                     if self.recording and now>=self.record_start and now-self.last_record>=.1 and tracked:
                         self.samples.append(sample);self.labels.append(self.record_label);self.last_record=now
-                        if result and result.valid:self.feature_count+=1
+                        if results.get(self.record_channel) and results[self.record_channel].valid:self.feature_count+=1
                 for hand in (sample.left,sample.right):
                     if hand is None:continue
                     points=[(int(p[0]*sample.width),int(p[1]*sample.height)) for p in hand]
@@ -169,7 +247,7 @@ class App:
         if self.landmarks:self.landmarks.close();self.landmarks=None
         with self.image_lock:self.latest=None
         self.preview.config(image='',text='鏡頭已停止')
-        self.capture_preview.config(image='',text='請先到「即時辨識」開啟鏡頭')
+        self.capture_preview.config(image='',text='請先到「1. 鏡頭與辨識」開啟鏡頭')
         self.router.update(tracked=False)
         self.capture_reason='鏡頭已停止';self.hand_status='尚未偵測'
         self.normalization_reason=''
@@ -188,18 +266,20 @@ class App:
         if not client or not client.paired:return
         flags=self.flags();signature=(client,tuple(flags.items()))
         if signature==self.sent_availability:return
-        try:
-            result=client.availability(**flags)
-            if result is not None:self.sent_availability=signature
-        except Exception as exc:
-            self.notice=f'算法狀態同步失敗：{exc}'
+        self.sent_availability=signature
+        def sync():
+            try:client.availability(**flags)
+            except Exception as exc:
+                self.connection_notice=f'算法狀態同步失敗：{exc}'
+                if self.sent_availability==signature:self.sent_availability=None
+        self.background(sync)
 
     def begin_record(self):
-        if not self.camera:messagebox.showinfo('請開鏡頭','先在關鍵點頁開啟鏡頭。');return
+        if not self.camera:messagebox.showinfo('請開鏡頭','先到「1. 鏡頭與辨識」開啟鏡頭。');return
         if self.recording:messagebox.showinfo('錄製中','先停止並保存。');return
         if self.record_pending:messagebox.showinfo('尚未保存','請先按停止錄製，重試保存上一批資料。');return
         with self.record_lock:
-            self.record_purpose=self.purpose_var.get();self.record_label=LABELS.index(self.class_var.get());self.samples=[];self.labels=[];self.feature_count=0;self.record_start=time.monotonic()+3;self.last_record=0
+            self.record_purpose=self.purpose_var.get();self.record_channel=self.channel_var.get();self.record_label=LABELS.index(self.class_var.get());self.samples=[];self.labels=[];self.feature_count=0;self.record_start=time.monotonic()+3;self.last_record=0
             if self.record_label==10:self.record_purpose='test';self.purpose_var.set('test')
             self.record_batch=f'{self.record_purpose}-{time.time_ns()}'
             self.recording=True;self.record_pending=True
@@ -215,7 +295,7 @@ class App:
             messagebox.showinfo('沒有有效樣本',f'本次沒有收進有效樣本。\n目前偵測：{self.hand_status}\n採集狀態：{self.capture_reason or "目前可採集"}\n可使用左手、右手或雙手。\n\n確認入鏡的手有完整關鍵點，倒數結束後「有效」筆數持續增加再保存。\n正規化尚未完成不會阻止原始資料採集。');return
         path=ROOT/'data'/f'{self.record_batch}-{self.record_label}-{time.time_ns()}.npz'
         try:
-            save_batch(path,samples,labels,self.record_purpose,dict(self.config))
+            save_batch(path,samples,labels,self.record_purpose,dict(self.config),channel=getattr(self,'record_channel',None))
         except Exception as exc:
             messagebox.showerror('保存失敗',f'{exc}\n資料仍保留，請再次按停止錄製重試。');return
         self.record_pending=False;self.stop_record_button.config(state='disabled')
@@ -228,36 +308,37 @@ class App:
             try:
                 _,labels,meta=read_batch(p)
                 label=' / '.join(LABELS[int(v)] for v in sorted(set(labels.tolist())))
-                purpose=meta['purpose'];count=len(labels)
-            except Exception:
-                label='資料無法讀取';purpose='—';count='—'
-            entries.append((label,purpose,p,count))
+                purpose=meta['purpose'];count=len(labels);channel=meta.get('channel','舊版')
+            except Exception as exc:
+                self.connection_notice=f'配對失敗：{exc}'
+                label='資料無法讀取';purpose='—';count='—';channel='—'
+            entries.append((label,purpose,p,count,channel))
             stamp=time.strftime('%m/%d %H:%M:%S',time.localtime(p.stat().st_mtime))
             self.batch_paths[p.name]=p
-        for label,purpose,p,count in sorted(entries,key=lambda v:(v[0],v[1],v[2].name)):
+        for label,purpose,p,count,channel in sorted(entries,key=lambda v:(v[0],v[1],v[2].name)):
             stamp=time.strftime('%m/%d %H:%M:%S',time.localtime(p.stat().st_mtime))
-            self.files.insert('', 'end',iid=p.name,values=(label,purpose,count,stamp))
+            self.files.insert('', 'end',iid=p.name,values=(label,purpose,channel,count,stamp))
 
     def delete_batch(self):
         selected=self.files.selection()
         if selected:
             row=self.files.item(selected[0],'values')
-            if messagebox.askyesno('刪除批次',f'確認刪除 {row[0]} / {row[1]} / {row[2]} 筆（{row[3]}）？'):
+            if messagebox.askyesno('刪除批次',f'確認刪除 {row[0]} / {row[1]} / {row[2]} / {row[3]} 筆（{row[4]}）？'):
                 p=self.batch_paths[selected[0]];p.unlink();p.with_suffix('.json').unlink(missing_ok=True);self.refresh_files()
 
     def train(self):
-        result=train(list((ROOT/'data').glob('*.npz')),ROOT/'models/knn.npz',self.config);self.load()
+        result=train(list((ROOT/'data').glob('*.npz')),ROOT/'models/model.npz',self.config);self.load()
         self.notice=json.dumps(result,ensure_ascii=False)
-        return f'訓練完成，KNN模型已保存並載入。\n訓練樣本：{result["training_samples"]} 筆\n正規化排除：{result["normalization_rejected"]} 筆'
+        return f'三通道訓練完成，模型已保存並載入。\n各通道樣本：{result["channel_samples"]}\n正規化排除：{result["normalization_rejected"]} 筆'
 
     def evaluate(self):
-        result=evaluate(list((ROOT/'data').glob('*.npz')),ROOT/'models/knn.npz',self.config);(ROOT/'models/evaluation.json').write_text(json.dumps(result,ensure_ascii=False,indent=2),encoding='utf-8');self.notice=f'獨立測試報告保存 models/evaluation.json：{result}'
+        result=evaluate(list((ROOT/'data').glob('*.npz')),ROOT/'models/model.npz',self.config);(ROOT/'models/evaluation.json').write_text(json.dumps(result,ensure_ascii=False,indent=2),encoding='utf-8');self.notice=f'獨立測試報告保存 models/evaluation.json：{result}'
         return f'獨立測試完成。\n測試樣本：{result["samples"]} 筆\n正規化排除：{result["normalization_rejected"]} 筆\n報告已保存至 models/evaluation.json'
 
     def load(self):
-        self.model=load_model(ROOT/'models/knn.npz',self.config);self.algorithm_status['knn']=True;self.notice='KNN模型已載入；接口可用不代表真人準確率通過'
+        self.model=load_model(ROOT/'models/model.npz',self.config);self.algorithm_status['knn']=True;self.notice='三通道模型已載入；請到鏡頭頁切換「辨識並傳送」'
         if self.client:self.client.availability(**self.flags())
-        return 'KNN模型已載入，可切換至 recognize 模式進行辨識。'
+        return '三通道模型已載入，可切換至「辨識並傳送」。'
 
     def toggle_pair(self):
         if self.pair_busy:return
@@ -265,13 +346,16 @@ class App:
         else:self.connect()
 
     def connect(self):
-        server,room,code=self.server_var.get(),self.room_var.get().upper(),self.pair_var.get()
+        try:server,room,code=pairing_values(self.server_var.get(),self.room_var.get(),self.pair_var.get())
+        except ValueError as exc:
+            messagebox.showerror('配對欄位',str(exc),parent=self.root);return
         self.pair_busy=True
         def run():
             try:
                 if self.client:self.client.close()
                 self.sent_availability=None
-                self.client=ArenaClient(self.router,lambda msg:setattr(self,'notice',msg),lambda:self.router.clear(self.filter_enabled));self.client.connect(server,room,code,'recognizer',self.flags())
+                self.connection_notice='正在連線與配對…'
+                self.client=ArenaClient(self.router,lambda msg:setattr(self,'connection_notice',msg),lambda:self.router.clear(self.filter_enabled));self.client.connect(server,room,code,'recognizer',self.flags())
             except Exception:
                 if self.client:self.client.close();self.client=None
                 raise
@@ -283,18 +367,25 @@ class App:
         def run():
             try:
                 if client:client.close()
-                self.client=None;self.sent_availability=None;self.notice='已解除配對'
+                self.client=None;self.sent_availability=None;self.connection_notice='已解除配對；下次需重新產生配對碼'
             finally:self.pair_busy=False
         self.background(run)
 
     def render(self):
-        self.pair_button.config(text='解除配對' if self.client and self.client.paired else '配對',state='disabled' if self.pair_busy else 'normal')
+        self.pair_button.config(text='解除配對' if self.client and self.client.paired else '配對辨識器',state='disabled' if self.pair_busy else 'normal')
+        self.status_var.set(self.notice)
+        for button in self.training_buttons:
+            button.config(state='disabled' if self.tool_busy or self.record_pending else 'normal')
+        self.connection_text.set(self.connection_notice)
+        self.readiness_text.set(f'鏡頭：{"已開啟" if self.camera else "未開啟"} · 模式：{"辨識並傳送" if self.mode=="recognize" else "僅預覽"} · 三通道模型：{"已載入" if self.model else "未載入"}\n正規化：{"已驗證可用" if self.algorithm_status["normalization"] else "尚未驗證／未完成"} · KNN：{"已載入" if self.algorithm_status["knn"] else "未完成／未載入"}\n輸出：{self.router.read()}')
+        self.feedback_text.set(f'競技場回饋：{self.client.feedback}\n上次動作：{getattr(self.client,"action_feedback","") or "尚未執行"}' if self.client else '競技場回饋：尚未配對')
         self.counts.config(text=f'有效 {len(self.samples)} 筆')
-        expected='左手／右手／雙手皆可，可混合採集於同一模型'
+        expected=f'本批通道：{self.record_channel}；需要相應的手完整入鏡'
         countdown=f'倒數 {max(0,self.record_start-time.monotonic()):.1f} 秒' if self.recording and time.monotonic()<self.record_start else ('錄製中' if self.recording else self.capture_reason or '可採集原始關鍵點')
         normalization_hint=f'\n正規化提示：{self.normalization_reason}' if self.normalization_reason else ''
         self.capture_status.config(text=f'{expected} · 偵測：{self.hand_status}\n採集狀態：{countdown}{normalization_hint}')
-        self.details.config(text=f'正規化：{"可用" if self.algorithm_status["normalization"] else "未完成／無效"} · KNN：{"可用" if self.algorithm_status["knn"] else "未完成／未載入"} · 濾波：{"啟用" if self.filter_enabled else "未啟用（選做）"} · 原分類 {self.raw_result}{normalization_hint}')
+        raw=' / '.join(f'{channel}={pred.label if pred.valid else "NONE"}' for channel,pred in (self.raw_result or {}).items())
+        self.details.config(text=f'正規化：{"可用" if self.algorithm_status["normalization"] else "未完成／無效"} · KNN：{"可用" if self.algorithm_status["knn"] else "未完成／未載入"} · 濾波：{"啟用" if self.filter_enabled else "未啟用（選做）"}\n原分類：{raw}\n安全輸出：{self.router.read()}{normalization_hint}')
         with self.image_lock:frame=self.latest
         if frame is not None:
             for widget in (self.preview,self.capture_preview):
