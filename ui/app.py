@@ -19,6 +19,7 @@ from core.dataset import save_batch, read_batch
 from network.arena_client import ArenaClient
 from network.commands import CHANNELS, DEFAULT_CHANNELS
 from network.pairing import SERVER, pairing_values, server_url
+from ui.fonts import configure_fonts
 
 ROOT=Path(__file__).resolve().parents[1]
 CONNECTIONS=[(0,1),(1,2),(2,3),(3,4),(0,5),(5,6),(6,7),(7,8),(5,9),(9,10),(10,11),(11,12),(9,13),(13,14),(14,15),(15,16),(13,17),(0,17),(17,18),(18,19),(19,20)]
@@ -26,6 +27,7 @@ CONNECTIONS=[(0,1),(1,2),(2,3),(3,4),(0,5),(5,6),(6,7),(7,8),(5,9),(9,10),(10,11
 class App:
     def __init__(self,config):
         self.config=config;self.root=tk.Tk();self.root.title('手勢訓練器 · 新版三通道 GUI 學員版')
+        self.font_family=configure_fonts(self.root)
         self.root.geometry(f'{min(1150,self.root.winfo_screenwidth()-80)}x{min(850,self.root.winfo_screenheight()-100)}')
         self.root.minsize(720,480)
         self.router=OutputRouter();self.camera=None;self.landmarks=None;self.model=None;self.client=None
@@ -41,7 +43,7 @@ class App:
         self.tool_notifications=queue.Queue()
         self.tool_busy=False
         main=ttk.Frame(self.root,padding=15);main.pack(fill='both',expand=True)
-        ttk.Label(main,text='手勢訓練器 · 三通道',font=('Microsoft JhengHei',22,'bold')).pack(anchor='w')
+        ttk.Label(main,text='手勢訓練器 · 三通道',font=(self.font_family,22,'bold')).pack(anchor='w')
         ttk.Label(main,text='錄製 → 完成範例程式 → 訓練與測試 → 連線遊玩；左右手可同時操作，雙手合成優先。').pack(anchor='w',pady=(3,10))
         self.tabs=ttk.Notebook(main);self.tabs.pack(fill='both',expand=True)
         preview=ttk.Frame(self.tabs,padding=12);connect=ttk.Frame(self.tabs,padding=12);data=ttk.Frame(self.tabs,padding=12)
@@ -94,7 +96,7 @@ class App:
         for key,title,width in [('label','類別',125),('purpose','用途',45),('channel','通道',55),('count','筆數',45),('time','錄製時間',110)]:
             self.files.heading(key,text=title);self.files.column(key,width=width,stretch=False)
         self.files.pack(anchor='w');ttk.Button(data,text='刪除所選資料',command=self.delete_batch).pack(anchor='w',pady=5)
-        ttk.Label(connect,text='把這個辨識器連到自己的網頁',font=('Microsoft JhengHei',16,'bold')).pack(anchor='w',pady=(0,8))
+        ttk.Label(connect,text='把這個辨識器連到自己的網頁',font=(self.font_family,16,'bold')).pack(anchor='w',pady=(0,8))
         self.play_var=tk.StringVar(value='PVE 一命連戰')
         ttk.Label(connect,text='網站玩法（此處提供填寫提示，仍需先在網站建立遊戲）').pack(anchor='w')
         ttk.Combobox(connect,textvariable=self.play_var,values=['PVE 一命連戰','PVP 雙人對決','假人練習'],state='readonly',width=28).pack(anchor='w',pady=5)
@@ -117,7 +119,7 @@ class App:
         self.feedback_text=tk.StringVar(value='競技場回饋：尚未配對');ttk.Label(connect,textvariable=self.feedback_text,wraplength=950).pack(anchor='w',pady=8)
         guide=ttk.Frame(self.tabs,padding=15);self.tabs.add(guide,text='4. 操作教學')
         guide,self.guide_canvas=self.scroll_page(guide)
-        ttk.Label(guide,text='與新版競技場相同的三通道能力',font=('Microsoft JhengHei',16,'bold')).pack(anchor='w',pady=(0,12))
+        ttk.Label(guide,text='與新版競技場相同的三通道能力',font=(self.font_family,16,'bold')).pack(anchor='w',pady=(0,12))
         tutorial=('1. 先開啟鏡頭，確認左手與右手標示正確。\n\n'
             '2. 錄製時選 left、right 或 both，再選動作與 train／test；三個通道都要收集資料。\n\n'
             '3. README 提供可整段複製的 131 維正規化、KNN 與選做濾波。student 檔案仍保留作業起點，程式修改後需重開工具。\n\n'

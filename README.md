@@ -32,6 +32,41 @@ Linux 還需安裝與 Python 版本相符的 Tk 和 venv 套件，例如套件�
 
 **之後每次開啟只需最後一行 `main.py gui`。** 不必重新安裝套件、下載關節模型或建立環境。VS Code 的 Python Interpreter 請選本專案 `.venv`。在程式中改好算法後，保存檔案、關閉並重開工具，才會載入新版本。
 
+### Linux／uv 的中文字型顯示異常
+
+GUI 會從已安裝的字型中選擇中文字型，並套用到標題與一般控制項：Windows 可使用微軟正黑體，macOS 可使用蘋方繁體，Linux 可使用 Noto Sans CJK TC。不附帶或私下安裝字型。
+
+Linux 的 uv Python 可能附帶不支援 Xft 的 Tk；此時**只安裝中文字型還不夠**，仍會呈現點陣、破碎或間距異常，參見 [上游問題](https://github.com/astral-sh/python-build-standalone/issues/740)。Ubuntu／Debian 可先確認 Python 所需的 Tk 版本：
+
+```bash
+./.venv/bin/python -c "import tkinter; print(tkinter.TkVersion)"
+```
+
+若顯示 `9.0`，安裝：
+
+```bash
+sudo apt update
+sudo apt install fonts-noto-cjk fontconfig tk9.0
+fc-cache -f
+./.venv/bin/python main.py gui
+```
+
+若顯示 `8.6`，將安裝指令中的 `tk9.0` 改成 `tk8.6`。其他發行版請安裝對應套件；發行版必須提供與 Python 相同主、次版本的 Tk。
+
+啟動 GUI 時，程式會先檢查中文字型能否使用；若不能，會在獨立程序驗證系統 Tk，確認版本相符且能讀取中文字型才採用。程式保留 Python 原本的 Tcl，不修改 uv 的 Python 安裝。Windows／macOS 不執行這項 Linux 修正。
+
+若發行版沒有相符的 Tk，或仍無法正常顯示，可保留 uv 管理套件，改用系統 Python 3.13 與其 Tk。先安裝 Python 3.13 及對應的 Tk（例如 `python3.13-tk`），確認以下路徑存在，再建立另一個環境：
+
+```bash
+/usr/bin/python3.13 -m tkinter
+uv venv --python /usr/bin/python3.13 .venv-linux
+uv pip install --python .venv-linux/bin/python -r requirements-lock.txt
+./.venv-linux/bin/python main.py prepare
+./.venv-linux/bin/python main.py gui
+```
+
+之後使用最後一行開啟即可。這個環境與原本的 `.venv` 分開；Python 路徑依發行版調整，專案要求 3.13。uv 支援指定系統 Python，詳見 [Python 選擇說明](https://docs.astral.sh/uv/concepts/python-versions/)。
+
 ## 2. 先認識四個分頁
 
 | 分頁 | 操作 | 成功時看到什麼 |

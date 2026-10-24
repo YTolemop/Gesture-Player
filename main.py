@@ -31,6 +31,8 @@ def main():
         temporary=ROOT/'data/.write-check';temporary.parent.mkdir(exist_ok=True);temporary.write_text('ok');temporary.unlink()
         print(json.dumps({'python':sys.version,'architecture':platform.architecture()[0],'platform':platform.platform(),'cv2':cv2.__version__,'numpy':numpy.__version__,'mediapipe':mediapipe.__version__,'model_load':'PASS','camera':'NOT_RUN','student_algorithms':'TODO'},ensure_ascii=False));return
     if args.command in ('gui','record'):
+        from ui.tk_runtime import ensure_linux_tk
+        ensure_linux_tk()
         from ui.app import App
         app=App(settings)
         if args.command=='record':app.tabs.select(1)
