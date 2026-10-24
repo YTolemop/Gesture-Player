@@ -4,33 +4,141 @@
 
 差別在操作方式：用按鈕選通道、錄製、訓練、測試及配對，不必手動執行每個流程。`student/` 仍是待完成的作業起點；本教學提供可整段複製的完整參考程式，沒有附帶別人的訓練資料或自訂手勢模型。請理解每一步，再使用自己的手勢收集資料。
 
-## 1. 安裝與開啟
+你會依序完成：設定環境 → 確認鏡頭 → 收集資料 → 實作辨識 → 訓練與驗證 → 連線遊玩。先了解下方的專案架構，再依第 1～9 節操作。
 
-需要 Python 3.13、攝影機及可開視窗的桌面環境。在 [GitHub](https://github.com/YTolemop/Gesture-Player) 按 Code → Download ZIP，完整解壓縮，然後用 VS Code 開啟含 `main.py` 的資料夾，再開啟終端機。
+## 專案架構與資料流程
 
-Windows PowerShell 首次執行：
+`core/` 負責取得手部資料、管理資料與三通道模型，`student/` 是學員實作入口，`network/` 負責競技場通訊，`ui/` 提供圖形介面。`main.py` 將這些部分串起來。
+
+```text
+main.py                    操作入口：準備、檢查、GUI、訓練與測試
+core/
+  camera.py                讀取攝影機
+  landmarks.py             呼叫 MediaPipe，取得手部關節
+  types.py                 定義原始樣本、特徵與分類結果
+  features.py              檢查原始樣本與特徵
+  dataset.py               保存與讀取錄製批次
+  channel_model.py         三通道訓練、模型載入與獨立測試
+  channel_router.py        左右獨立、雙手優先與缺手清除
+  resources.py             下載與驗證 MediaPipe 關節模型
+student/
+  normalization.py         學員實作：131 維特徵正規化
+  knn.py                   學員實作：KNN 訓練與分類
+  filtering.py             學員選做：時間濾波
+ui/                        鏡頭、錄製、訓練、測試與配對介面
+network/                   配對、指令傳送與網站鏡頭預覽
+protocol/                  競技場通訊規格與範例封包
+tests/                     工具與介面契約的測試
+requirements-lock.txt      套件與固定版本
+```
+
+錄製、訓練與遊玩是三個不同階段：
+
+```text
+錄製：鏡頭 → MediaPipe → 原始關節 + 手動選擇的動作／通道／用途 → data/*.npz + *.json
+訓練：train 批次 → 各通道特徵正規化 → 三個 KNN 分類器 → models/model.npz
+測試：獨立 test 批次 → 同一套辨識流程 → models/evaluation.json
+遊玩：鏡頭 → MediaPipe → 正規化 → KNN → 選做濾波 → 三通道輸出 → 競技場
+```
+
+兩種模型要分清楚：`assets/models/hand_landmarker.task` 是 MediaPipe 已訓練的手部關節偵測模型，只負責找出關節；`models/model.npz` 才是用自己的手勢資料建立的分類模型。`data/` 和 `models/` 會在錄製與訓練後產生，不一定出現在剛解壓縮的專案裡。預覽和錄製可先使用，辨識與訓練則需要完成 `student/` 中的正規化與 KNN。
+
+## 1. 設定環境與開啟 GUI
+
+需要 **Python 3.13**、攝影機、可開視窗的本機桌面環境，以及首次下載依賴與關節模型所需的網路。專案的 `pyproject.toml` 指定 Python `3.13.*`，請先確認版本再安裝套件。
+
+在 [GitHub](https://github.com/YTolemop/Gesture-Player) 按 Code → Download ZIP，完整解壓縮。在 VS Code 選「檔案 → 開啟資料夾」，開啟內含 `main.py` 的專案資料夾，再選「終端機 → 新增終端機」。接下來的指令都在這個資料夾執行。
+
+### 建立環境與安裝套件
+
+依自己的系統選一組指令。`.venv` 是專案自己的 Python 環境；`requirements-lock.txt` 列出所需套件與固定版本。這一段只需在第一次使用或重建環境時執行。**第一行應顯示 `Python 3.13.x`；若找不到指令或版本不符，先安裝 Python 3.13，再繼續。**
+
+Windows：使用 PowerShell。
 
 ```powershell
+py -3.13 --version
 py -3.13 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements-lock.txt
 .\.venv\Scripts\python.exe main.py prepare
 .\.venv\Scripts\python.exe main.py check
-.\.venv\Scripts\python.exe main.py gui
 ```
 
-macOS／Linux 首次執行：
+macOS：使用 Terminal 的 zsh 或 bash。M 系列晶片請使用原生 Apple Silicon 的 Python 與終端機環境。
 
 ```bash
+python3.13 --version
 python3.13 -m venv .venv
 ./.venv/bin/python -m pip install -r requirements-lock.txt
 ./.venv/bin/python main.py prepare
 ./.venv/bin/python main.py check
+```
+
+Linux：使用本機桌面環境的 bash 或 zsh，先安裝 Python 3.13，以及與該版本相符的 Tk 和 venv 套件。以套件來源提供該版本的 Ubuntu／Debian 為例：
+
+```bash
+sudo apt update
+sudo apt install python3.13-tk python3.13-venv
+```
+
+再建立環境：
+
+```bash
+python3.13 --version
+python3.13 -m venv .venv
+./.venv/bin/python -m pip install -r requirements-lock.txt
+./.venv/bin/python main.py prepare
+./.venv/bin/python main.py check
+```
+
+若建立 `.venv` 時提示缺少 `venv` 或 `ensurepip`，先確認已安裝對應的 venv 套件，再重新建立。GUI 使用 Tkinter，Linux 必須有可用的 Tk；若提示缺少 `tkinter` 或 `_tkinter`，請確認安裝的 Tk 套件對應目前使用的 Python。
+
+上面各行分別負責不同的事，若某一步失敗，先處理該步的錯誤：
+
+| 指令部分 | 用途 |
+| --- | --- |
+| `--version` | 確認使用 Python 3.13 |
+| `-m venv .venv` | 建立這個專案專用的 Python 環境 |
+| `-m pip install -r requirements-lock.txt` | 用該環境的 Python 安裝指定套件 |
+| `main.py prepare` | 下載並驗證 MediaPipe 關節模型；已有有效模型時直接驗證 |
+| `main.py check` | 檢查套件、Tkinter 匯入、關節模型載入與資料夾寫入 |
+
+`check` 成功時會輸出 JSON，包含 Python 版本、套件版本與 `"model_load": "PASS"`。`"camera": "NOT_RUN"` 表示尚未測試鏡頭；`"student_algorithms": "TODO"` 是這個檢查指令的固定標記，不會驗證你是否完成演算法。這一步通過後，仍需到 GUI 確認鏡頭並完成後續訓練與測試。
+
+### 開啟 GUI 與後續使用
+
+環境檢查通過後，執行自己的系統對應指令：
+
+Windows PowerShell：
+
+```powershell
+.\.venv\Scripts\python.exe main.py gui
+```
+
+macOS／Linux：
+
+```bash
 ./.venv/bin/python main.py gui
 ```
 
-Linux 還需安裝與 Python 版本相符的 Tk 和 venv 套件，例如套件來源提供 Python 3.13 的 Ubuntu／Debian 可安裝 `python3.13-tk`、`python3.13-venv`。macOS 使用原生 Apple Silicon Python；各系統都要允許執行工具的程式使用攝影機。
+**之後每次開啟，回到專案資料夾執行上面的 GUI 指令即可。** 不必重新安裝套件、下載關節模型或建立環境。錄製、訓練、測試和配對都可在視窗內操作。
 
-**之後每次開啟只需最後一行 `main.py gui`。** 不必重新安裝套件、下載關節模型或建立環境。VS Code 的 Python Interpreter 請選本專案 `.venv`。在程式中改好算法後，保存檔案、關閉並重開工具，才會載入新版本。
+也可以先啟用環境，再使用 `python main.py gui`。每次重新開啟終端機都需要重新啟用：
+
+Windows PowerShell：
+
+```powershell
+.\.venv\Scripts\Activate.ps1
+```
+
+macOS／Linux：
+
+```bash
+source .venv/bin/activate
+```
+
+若 PowerShell 不允許執行啟用腳本，直接使用前面的 `.\.venv\Scripts\python.exe` 即可。macOS／Linux 也可直接使用 `./.venv/bin/python`。
+
+在 VS Code 按 `Ctrl+Shift+P`（Mac 為 `Cmd+Shift+P`），搜尋 `Python: Select Interpreter`，選本專案 `.venv` 的 Python，讓編輯器也使用相同環境。在程式中改好算法後，保存檔案、關閉並重開工具，才會載入新版本。
 
 ### Linux／uv 的中文字型顯示異常
 
@@ -77,6 +185,19 @@ uv pip install --python .venv-linux/bin/python -r requirements-lock.txt
 | 4. 操作教學 | 查看流程；開啟本 README | 可複製的演算法完整範例和逐步操作 |
 
 先開啟鏡頭並只伸出一隻手，確認左手、右手標示符合你使用的手。`swap_handedness` 控制這個對應；修改後須重新錄製／檢查資料並重新訓練。預覽模式只送中立遊戲指令，但配對後仍可把鏡頭和骨架傳到網站。
+
+### 確認鏡頭與 MediaPipe 關節
+
+1. 到「1. 鏡頭與辨識」，模式先選「僅預覽鏡頭」，鏡頭索引保留 `0`，按「開啟鏡頭」。
+2. 將手完整放入畫面，確認能看見每隻手的 21 個關鍵點與連線；分別測左手、右手，再同時伸出雙手。
+3. 若開到錯誤鏡頭，先按「停止鏡頭」，將索引改成 `1` 或其他可用值，再重新開啟。
+4. 移開雙手，確認介面不再顯示有手；按「停止鏡頭」可結束預覽，關閉工具也會釋放攝影機。
+
+這一步只確認鏡頭與關節偵測可用，尚未完成學員分類器時仍可預覽與錄製。MediaPipe 的左右手分類分數不是手勢辨識正確率，也不是關節座標精準度。
+
+鏡頭權限：Windows 請允許桌面應用程式使用攝影機；macOS 請在「系統設定 → 隱私權與安全性 → 攝影機」允許 VS Code／Terminal，必要時重啟應用程式；Linux 請確認目前帳號可存取攝影機裝置。其他視訊程式若占用鏡頭，先關閉再試。
+
+完成標準：鏡頭持續提供影格，手入鏡時可看見關鍵點，左右手對應正確，手移開時偵測回到無手。
 
 ## 3. 選通道，錄製自己的十種手勢
 
@@ -571,6 +692,11 @@ Windows 執行共用工具測試：
 
 | 現象 | 檢查方式 |
 | --- | --- |
+| 找不到 Python 3.13 | 先安裝 Python 3.13；Windows 確認 `py -3.13 --version` 可用，macOS／Linux 確認 `python3.13 --version` 顯示 3.13.x |
+| 缺少套件或裝好仍無法匯入 | 用專案 `.venv` 的 Python 重新安裝 `requirements-lock.txt`，確認安裝與啟動使用同一個環境 |
+| 缺少關節模型或雜湊不符 | 執行 `main.py prepare`；若既有檔案損壞，移除 `assets/models/hand_landmarker.task` 後重新下載 |
+| GUI 無法開啟或缺少 Tkinter | 確認使用本機桌面環境；Linux 安裝與所用 Python 相符的 Tk 套件，中文字型問題見第 1 節 |
+| 鏡頭無法開啟 | 檢查系統攝影機權限、其他程式是否占用，並在停止鏡頭後更換鏡頭索引 |
 | 鏡頭有畫面，卻一直說算法未完成 | 先完成 student 範例、保存並重開工具；錄製成功不代表算法已完成 |
 | 某通道沒有訓練資料 | 選正確通道重新錄製；left 需左手、right 需右手、both 需兩手 |
 | 顯示舊批次／舊模型 | 備份舊資料，使用新版 UI 另錄三通道資料並重訓；不會自動把舊單通道模型升級 |
@@ -582,3 +708,20 @@ Windows 執行共用工具測試：
 | 延遲或 FPS 偏低 | 先關閉不必要的攝影機程式；看工具底部 FPS／辨識耗時，並分別檢查分類穩定度與網路 |
 
 UI 是完整新版功能的另一個入口，並非自動完成作業的辨識器；模型準確度仍取決於自己錄的資料和實作。
+
+## 指令速查
+
+所有指令都在含 `main.py` 的專案資料夾執行。下表以已啟用 `.venv` 的 `python` 為例；未啟用時，Windows 換成 `.\.venv\Scripts\python.exe`，macOS／Linux 換成 `./.venv/bin/python`。可用 `python main.py --help` 查看可用子命令。
+
+| 指令 | 用途 |
+| --- | --- |
+| `python main.py prepare` | 下載並驗證 MediaPipe 關節模型 |
+| `python main.py check` | 檢查依賴、關節模型載入與資料夾寫入，不開鏡頭 |
+| `python main.py gui` | 開啟完整圖形介面 |
+| `python main.py record` | 開啟同一個 GUI，直接選取「錄製與訓練」分頁 |
+| `python main.py train` | 讀取 `data/` 的 train 批次，訓練並保存 `models/model.npz` |
+| `python main.py test` | 讀取 `data/` 的 test 批次與已保存模型，在終端機輸出 JSON 報告；GUI 的「測試」按鈕另會保存 `models/evaluation.json` |
+
+本版鏡頭預覽與遊戲配對都在 GUI 操作，沒有 initial 的 `camera`、`run` 子命令，也不接受其 `--label`、`--channel` 或 `--pair-code` 參數；請依第 2、3、8 節操作。
+
+`data/`、`models/` 的輸出已由 `.gitignore` 排除，備份或交付時請另外確認；MediaPipe 關節模型可用 `prepare` 準備。配對後會將縮小的鏡頭影像與手部骨架送到同場網站預覽；錄製的完整關節資料保存在本機。
