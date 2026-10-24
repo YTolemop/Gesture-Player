@@ -226,9 +226,9 @@ uv pip install --python .venv-linux/bin/python -r requirements-lock.txt
 
 | 通道 | 自訂手勢名稱 | 預計對應的指令 |
 | --- | --- | --- |
-| left | point_left（向左指） | MOVE_LEFT |
-| left | point_right（向右指） | MOVE_RIGHT |
-| right | fist（握拳） | NORMAL_ATTACK |
+| left | point_left | MOVE_LEFT |
+| left | point_right | MOVE_RIGHT |
+| right | fist | NORMAL_ATTACK |
 
 自訂手勢名稱用來記錄自己的設計。本版 GUI 的「動作」直接選擇遊戲指令作為分類標籤，例如 `MOVE_LEFT`，不需另外輸入 `point_left`，也不需另外撰寫名稱到指令的映射。
 
